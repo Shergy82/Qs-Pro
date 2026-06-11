@@ -90,9 +90,14 @@ function localHeuristicExcelParser(filePath) {
     const items = [];
     
     workbook.SheetNames.forEach(sheetName => {
-      // Skip collection or summary sheets
+      // Skip collection, summary, totals, index, instructions, or preliminaries sheets
       const nameLower = sheetName.toLowerCase();
-      if (nameLower.includes('collection') || nameLower.includes('summary') || nameLower.includes('total')) {
+      if (nameLower.includes('collection') || 
+          nameLower.includes('summary') || 
+          nameLower.includes('total') || 
+          nameLower.includes('index') || 
+          nameLower.includes('instruction') || 
+          nameLower.includes('prelim')) {
         return;
       }
       
@@ -109,7 +114,8 @@ function localHeuristicExcelParser(filePath) {
       let rateIdx = 4;
       
       // Dynamic header mapping
-      for (let r = 0; r < Math.min(rows.length, 5); r++) {
+      let headerRowIdx = -1;
+      for (let r = 0; r < Math.min(rows.length, 15); r++) {
         const row = rows[r];
         if (!row || !Array.isArray(row)) continue;
         
@@ -126,10 +132,14 @@ function localHeuristicExcelParser(filePath) {
           if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
           if (str === 'rate' || str.includes('unit cost')) rateIdx = idx;
         });
-        if (foundDesc) break;
+        if (foundDesc) {
+          headerRowIdx = r;
+          break;
+        }
       }
       
-      for (let r = 0; r < rows.length; r++) {
+      const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+      for (let r = startRowIdx; r < rows.length; r++) {
         const row = rows[r];
         if (!row || !Array.isArray(row) || row.length === 0) continue;
         
@@ -147,6 +157,20 @@ function localHeuristicExcelParser(filePath) {
         
         // Skip totals and collections
         if (descLower.includes('total') || descLower.includes('collection') || descLower === 'downtakings' || descLower === 'electrical;') {
+          continue;
+        }
+        
+        const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
+        const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
+        const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
+        const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
+        const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
+        
+        if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
+          // Check if it's a sub-heading section
+          if (description.length < 50) {
+            currentSection = description;
+          }
           continue;
         }
         
@@ -1651,32 +1675,99 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
       let cleanedTotalRows = 0;
 
       workbook.SheetNames.forEach(name => {
+        const nameLower = name.toLowerCase();
+        // Skip collection, summary, totals, index, instructions, or preliminaries sheets
+        if (nameLower.includes('collection') || 
+            nameLower.includes('summary') || 
+            nameLower.includes('total') || 
+            nameLower.includes('index') || 
+            nameLower.includes('instruction') || 
+            nameLower.includes('prelim')) {
+          console.log(`[Excel Analyzer] Skipping sheet: ${name}`);
+          return;
+        }
+
         const sheet = workbook.Sheets[name];
-        const csv = XLSX.utils.sheet_to_csv(sheet);
-        
-        const lines = csv.split('\n');
-        originalTotalRows += lines.length;
-        
-        let cleanedLines = lines.map(line => {
-          const fields = line.split(',');
-          let lastIndex = fields.length - 1;
-          while (lastIndex >= 0) {
-            const val = fields[lastIndex].trim().replace(/['"\s]/g, '');
-            if (val.length > 0) break;
-            lastIndex--;
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        originalTotalRows += rows.length;
+
+        let itemIdx = 0, descIdx = 1, unitIdx = 2, qtyIdx = 3, rateIdx = 4;
+        let headerRowIdx = -1;
+
+        // Dynamic header search up to 15 rows
+        for (let r = 0; r < Math.min(rows.length, 15); r++) {
+          const row = rows[r];
+          if (!row || !Array.isArray(row)) continue;
+          let foundDesc = false;
+          row.forEach((cell, idx) => {
+            if (!cell) return;
+            const str = String(cell).toLowerCase().trim();
+            if (str === 'item' || str === 'ref' || str === 'code') itemIdx = idx;
+            if (str.includes('description') || str.includes('work') || str === 'details') {
+              descIdx = idx;
+              foundDesc = true;
+            }
+            if (str === 'unit') unitIdx = idx;
+            if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
+            if (str === 'rate' || str.includes('unit cost')) rateIdx = idx;
+          });
+          if (foundDesc) {
+            headerRowIdx = r;
+            break;
           }
-          return fields.slice(0, lastIndex + 1).join(',');
-        }).filter(line => {
-          const cleaned = line.replace(/[,;'"\r\s]/g, '');
-          return cleaned.length > 0;
-        });
-        
+        }
+
+        const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+        let cleanedLines = [];
+
+        if (headerRowIdx !== -1) {
+          cleanedLines.push(rows[headerRowIdx].join(','));
+        }
+
+        for (let r = startRowIdx; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+          const descCell = row[descIdx];
+          if (!descCell) continue;
+          const description = String(descCell).trim();
+          if (description.length < 5) continue;
+
+          const descLower = description.toLowerCase();
+          // Skip header and totals lines
+          if (descLower.includes('description of works') || descLower.includes('description of work') || descLower.includes('item description')) {
+            continue;
+          }
+          if (descLower.includes('total') || descLower.includes('collection') || descLower === 'downtakings' || descLower === 'electrical;') {
+            continue;
+          }
+
+          // Row quality check
+          const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
+          const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
+          const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
+          const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
+          const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
+
+          if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
+            continue;
+          }
+
+          const itemCell = row[itemIdx];
+          const itemCode = itemCell ? String(itemCell).trim() : '';
+          if (!itemCode && description.length < 50 && !row[qtyIdx] && !row[unitIdx]) {
+            continue;
+          }
+
+          cleanedLines.push(row.map(cell => cell === null || cell === undefined ? '' : String(cell).replace(/,/g, ' ')).join(','));
+        }
+
         // Safety cap to prevent blowing up the free-tier token quota on massive sheets
         if (cleanedLines.length > 250) {
           console.warn(`Sheet "${name}" contains ${cleanedLines.length} rows. Truncating to 250 rows for token safety.`);
           cleanedLines = cleanedLines.slice(0, 250);
         }
-        
+
         cleanedTotalRows += cleanedLines.length;
 
         if (cleanedLines.length > 0) {
@@ -1684,16 +1775,22 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
         }
       });
 
-      console.log(`Excel parsed locally. Original rows: ${originalTotalRows}, Cleaned rows (with data): ${cleanedTotalRows}, String size: ${excelText.length} characters.`);
-      console.log('Sending parsed Excel contents to Gemini...');
+      console.log(`Excel pre-filtered. Original rows: ${originalTotalRows}, Cleaned rows (with data): ${cleanedTotalRows}, String size: ${excelText.length} characters.`);
+      console.log('Sending pre-filtered Excel contents to Gemini...');
       try {
         const response = await generateContentWithRetry({
           model: 'gemini-2.5-flash',
           contents: [
             `You are an expert UK Quantity Surveyor. Analyze this uploaded construction spreadsheet data.
-Extract all distinct work items, quantities, and units. Do not hallucinate prices.
+Extract all distinct priced work items, quantities, and units. Do not hallucinate prices.
 Map each item into our exact JSON array structure.
 You must return a valid JSON array of objects. Do not wrap it in markdown block quotes (no \`\`\`json). Just the raw JSON array.
+
+Strict Rules:
+1. Ignore any general project information, headers, site notes, drawing list tables, preliminaries, contract terms, or pages/tabs that do not contain actual priced work items.
+2. Ignore rows that are section headers, summaries, or blank rows.
+3. Only extract physical, distinct construction work items that a contractor would price (e.g. demolitions, walls, doors, painting, plumbing, structural framing).
+4. For each item, ensure you extract a valid description, quantity, and unit. If unit is missing, deduce it (e.g. m, m2, m3, Nr, Item).
 
 Structure for each object:
 {
@@ -1707,13 +1804,13 @@ Structure for each object:
   "subRate": 0
 }
 
-SPREADHEET DATA:
+SPREADSHEET DATA:
 ${excelText}`
           ],
           config: {
             responseMimeType: 'application/json',
           }
-        }, 2, 1000); // 2 attempts max, 1s delay -> fail fast instantly (approx 2s wait)
+        }, 2, 1000); // 2 attempts max, 1s delay
         extractedItems = JSON.parse(response.text);
         fs.unlinkSync(req.file.path);
       } catch (geminiError) {
