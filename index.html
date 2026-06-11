@@ -342,6 +342,38 @@
                                             </select>
                                         </div>
                                     </div>
+                                    
+                                    <!-- Manual Room Calculator (collapsible, active when unit is polygon or line) -->
+                                    <div id="manual-calculator-container" style="display: none; background: rgba(255, 255, 255, 0.02); padding: 10px; border-radius: var(--border-radius-sm); border: 1px dashed rgba(99, 102, 241, 0.2); margin-bottom: 8px;">
+                                        <div style="font-size: 0.7rem; font-weight: 600; color: var(--color-indigo); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                                            <span>📐 Room Calculator</span>
+                                        </div>
+                                        <div class="flex gap-2" style="margin-bottom: 6px;">
+                                            <div style="flex: 1;">
+                                                <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Width (m)</label>
+                                                <input type="number" id="manual-calc-width" placeholder="0.00" class="form-input text-xs" style="padding: 4px 8px;" step="any">
+                                            </div>
+                                            <div style="flex: 1;">
+                                                <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Length (m)</label>
+                                                <input type="number" id="manual-calc-length" placeholder="0.00" class="form-input text-xs" style="padding: 4px 8px;" step="any">
+                                            </div>
+                                            <div style="flex: 1;" id="manual-calc-height-group">
+                                                <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Height (m)</label>
+                                                <input type="number" id="manual-calc-height" placeholder="0.00" class="form-input text-xs" style="padding: 4px 8px;" step="any">
+                                            </div>
+                                        </div>
+                                        <div style="margin-bottom: 6px;">
+                                            <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Calculation Type</label>
+                                            <select id="manual-calc-type" class="form-select text-xs" style="padding: 4px 8px; height: 28px; width: 100%;">
+                                                <!-- Filled dynamically -->
+                                            </select>
+                                        </div>
+                                        <div style="font-size: 0.7rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 4px 8px; border-radius: 4px;">
+                                            <span>Formula:</span>
+                                            <strong id="manual-calc-formula" class="text-primary">-</strong>
+                                        </div>
+                                    </div>
+
                                     <button class="btn btn-primary w-full text-xs" id="btn-add-manual-measure" type="button" style="padding: 6px 12px;">
                                         Add Measurement
                                     </button>
@@ -829,14 +861,67 @@
                     <div class="text-xs text-secondary">Active Scope Item</div>
                     <div id="modal-item-desc" class="font-bold text-sm mt-1">Redecorate Sitting Room ceiling</div>
                     <div class="flex gap-4 mt-2">
-                        <span class="text-xs text-secondary">Unit: <strong id="modal-item-unit" class="text-primary">Item</strong></span>
-                        <span class="text-xs text-secondary">Current Quantity: <strong id="modal-item-qty" class="text-primary">1</strong></span>
+                        <span class="text-xs text-secondary">Current Unit: <strong id="modal-item-unit" class="text-primary">Item</strong></span>
+                        <span class="text-xs text-secondary">Current Qty: <strong id="modal-item-qty" class="text-primary">1</strong></span>
                     </div>
                 </div>
                 
                 <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
                     <!-- Manual Inputs -->
                     <div class="manual-adjust-fields">
+                        <h4 class="text-xs text-secondary uppercase font-bold tracking-wider mb-3">Quantity & Cost Breakdown</h4>
+                        <div style="margin-bottom: 12px; display: flex; gap: 10px; align-items: flex-end;">
+                            <div style="flex: 1;">
+                                <label class="text-xs text-secondary block mb-1">Quantity</label>
+                                <input type="number" id="rate-qty-input" class="form-input text-xs" style="padding: 6px 10px;" step="any">
+                            </div>
+                            <div style="width: 100px;">
+                                <label class="text-xs text-secondary block mb-1">Unit</label>
+                                <select id="rate-unit-select" class="form-select text-xs" style="padding: 6px 10px; height: 32px; background: #0e1422; border: 1px solid var(--border-color); color: var(--text-primary); outline: none;">
+                                    <option value="Nr">Nr</option>
+                                    <option value="m2">m²</option>
+                                    <option value="m3">m³</option>
+                                    <option value="m">m</option>
+                                    <option value="Item">Item</option>
+                                    <option value="Sum">Sum</option>
+                                    <option value="hr">hr</option>
+                                    <option value="day">day</option>
+                                    <option value="t">t</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Room Calculator for Adjust Rate Modal (collapsible, active when unit is m2 or m) -->
+                        <div id="adjust-calculator-container" style="display: none; background: rgba(255, 255, 255, 0.02); padding: 10px; border-radius: var(--border-radius-sm); border: 1px dashed rgba(99, 102, 241, 0.2); margin-bottom: 12px;">
+                            <div style="font-size: 0.7rem; font-weight: 600; color: var(--color-indigo); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                                <span>📐 Room Calculator</span>
+                            </div>
+                            <div class="flex gap-2" style="margin-bottom: 6px;">
+                                <div style="flex: 1;">
+                                    <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Width (m)</label>
+                                    <input type="number" id="adjust-calc-width" placeholder="0.00" class="form-input text-xs" style="padding: 4px 8px;" step="any">
+                                </div>
+                                <div style="flex: 1;">
+                                    <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Length (m)</label>
+                                    <input type="number" id="adjust-calc-length" placeholder="0.00" class="form-input text-xs" style="padding: 4px 8px;" step="any">
+                                </div>
+                                <div style="flex: 1;" id="adjust-calc-height-group">
+                                    <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Height (m)</label>
+                                    <input type="number" id="adjust-calc-height" placeholder="0.00" class="form-input text-xs" style="padding: 4px 8px;" step="any">
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 6px;">
+                                <label class="text-xs text-secondary" style="display: block; margin-bottom: 2px;">Calculation Type</label>
+                                <select id="adjust-calc-type" class="form-select text-xs" style="padding: 4px 8px; height: 28px; width: 100%;">
+                                    <!-- Filled dynamically -->
+                                </select>
+                            </div>
+                            <div style="font-size: 0.7rem; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 4px 8px; border-radius: 4px;">
+                                <span>Formula:</span>
+                                <strong id="adjust-calc-formula" class="text-primary">-</strong>
+                            </div>
+                        </div>
+
                         <h4 class="text-xs text-secondary uppercase font-bold tracking-wider mb-3">Cost Breakdown</h4>
                         <div style="margin-bottom: 12px;">
                             <label class="text-xs text-secondary block mb-1">Material Rate (£)</label>
@@ -1106,6 +1191,37 @@
                 <div>
                     <label class="form-label" for="add-item-qty">Quantity *</label>
                     <input type="number" id="add-item-qty" class="form-input" placeholder="1.00" value="1.00" step="any">
+                </div>
+
+                <!-- Room Calculator for Add Estimate Item Modal (collapsible, active when unit is m2 or m) -->
+                <div id="add-item-calculator-container" style="display: none; background: rgba(255, 255, 255, 0.02); padding: 12px; border-radius: var(--border-radius-sm); border: 1px dashed rgba(99, 102, 241, 0.2); margin-top: 10px;">
+                    <div style="font-size: 0.75rem; font-weight: 600; color: var(--color-indigo); margin-bottom: 8px; display: flex; align-items: center; gap: 4px;">
+                        <span>📐 Room Dimensions Calculator</span>
+                    </div>
+                    <div class="grid-3-col" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                        <div>
+                            <label class="text-xs text-secondary block mb-1">Width (m)</label>
+                            <input type="number" id="add-item-calc-width" class="form-input text-xs" style="padding: 6px 10px;" step="any" placeholder="0.00">
+                        </div>
+                        <div>
+                            <label class="text-xs text-secondary block mb-1">Length (m)</label>
+                            <input type="number" id="add-item-calc-length" class="form-input text-xs" style="padding: 6px 10px;" step="any" placeholder="0.00">
+                        </div>
+                        <div id="add-item-calc-height-group">
+                            <label class="text-xs text-secondary block mb-1">Height (m)</label>
+                            <input type="number" id="add-item-calc-height" class="form-input text-xs" style="padding: 6px 10px;" step="any" placeholder="0.00">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <label class="text-xs text-secondary block mb-1">Calculation Type</label>
+                        <select id="add-item-calc-type" class="form-select text-xs" style="padding: 6px 10px; height: 32px; width: 100%;">
+                            <!-- Filled dynamically depending on unit -->
+                        </select>
+                    </div>
+                    <div class="text-xs text-secondary" style="background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Formula:</span>
+                        <strong id="add-item-calc-formula" class="text-primary">-</strong>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px;">

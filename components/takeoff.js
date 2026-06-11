@@ -99,6 +99,7 @@ class TakeoffComponent {
                 if (manualFormFields.style.display === 'none') {
                     manualFormFields.style.display = 'block';
                     btnToggleManualForm.querySelector('span').innerText = '- Hide Manual Form';
+                    this.handleManualUnitChange();
                 } else {
                     manualFormFields.style.display = 'none';
                     btnToggleManualForm.querySelector('span').innerText = '+ Add Manual Quantity';
@@ -159,15 +160,40 @@ class TakeoffComponent {
                     isManual: true
                 });
                 
-                // Clear inputs
+                // Clear inputs and calculator values
                 nameInput.value = '';
                 valInput.value = '';
+                const widthEl = document.getElementById('manual-calc-width');
+                if (widthEl) widthEl.value = '';
+                const lengthEl = document.getElementById('manual-calc-length');
+                if (lengthEl) lengthEl.value = '';
+                const heightEl = document.getElementById('manual-calc-height');
+                if (heightEl) heightEl.value = '';
+                const formulaEl = document.getElementById('manual-calc-formula');
+                if (formulaEl) formulaEl.innerText = '-';
                 
                 // Re-render
                 this.renderCanvas();
                 this.renderMeasurementsList();
             });
         }
+
+        // Room Calculator unit change for manual takeoff
+        const manualUnitSelect = document.getElementById('manual-unit');
+        if (manualUnitSelect) {
+            manualUnitSelect.addEventListener('change', () => {
+                this.handleManualUnitChange();
+            });
+        }
+
+        // Bind keyup/change for manual calculator inputs
+        ['manual-calc-width', 'manual-calc-length', 'manual-calc-height', 'manual-calc-type'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', () => this.runManualCalculation());
+                el.addEventListener('change', () => this.runManualCalculation());
+            }
+        });
 
         // Keyboard press Enter
         window.addEventListener('keydown', (e) => {
@@ -567,6 +593,93 @@ class TakeoffComponent {
             app.switchPanel('pricing');
         } else {
             alert("Sync failed: pricing component not ready.");
+        }
+    }
+
+    handleManualUnitChange() {
+        const typeSelect = document.getElementById('manual-unit');
+        const container = document.getElementById('manual-calculator-container');
+        const calcType = document.getElementById('manual-calc-type');
+        const heightGroup = document.getElementById('manual-calc-height-group');
+        if (!typeSelect || !container || !calcType) return;
+
+        const val = typeSelect.value;
+        if (val === 'polygon') {
+            container.style.display = 'block';
+            if (heightGroup) heightGroup.style.display = 'block';
+            
+            const prevVal = calcType.value;
+            calcType.innerHTML = `
+                <option value="walls">Wall Area: 2 * (W + L) * H</option>
+                <option value="floor">Floor / Ceiling Area: W * L</option>
+                <option value="total">Walls + Ceiling: 2 * (W + L) * H + (W * L)</option>
+            `;
+            if (['walls', 'floor', 'total'].includes(prevVal)) {
+                calcType.value = prevVal;
+            } else {
+                calcType.value = 'walls';
+            }
+            this.runManualCalculation();
+        } else if (val === 'line') {
+            container.style.display = 'block';
+            if (heightGroup) heightGroup.style.display = 'none';
+            
+            const prevVal = calcType.value;
+            calcType.innerHTML = `
+                <option value="perimeter">Perimeter: 2 * (W + L)</option>
+                <option value="half">Width + Length: W + L</option>
+            `;
+            if (['perimeter', 'half'].includes(prevVal)) {
+                calcType.value = prevVal;
+            } else {
+                calcType.value = 'perimeter';
+            }
+            this.runManualCalculation();
+        } else {
+            container.style.display = 'none';
+        }
+    }
+
+    runManualCalculation() {
+        const widthVal = document.getElementById('manual-calc-width');
+        const lengthVal = document.getElementById('manual-calc-length');
+        const heightVal = document.getElementById('manual-calc-height');
+        const typeSelect = document.getElementById('manual-calc-type');
+        const formulaEl = document.getElementById('manual-calc-formula');
+        const qtyInput = document.getElementById('manual-value');
+
+        if (!widthVal || !lengthVal || !typeSelect || !formulaEl || !qtyInput) return;
+
+        const width = parseFloat(widthVal.value) || 0;
+        const length = parseFloat(lengthVal.value) || 0;
+        const height = heightVal ? (parseFloat(heightVal.value) || 0) : 0;
+        const calcType = typeSelect.value;
+
+        let result = 0;
+        let formulaText = '-';
+
+        if (calcType === 'walls') {
+            result = 2 * (width + length) * height;
+            formulaText = `2 * (${width.toFixed(2)} + ${length.toFixed(2)}) * ${height.toFixed(2)} = ${result.toFixed(2)} m²`;
+        } else if (calcType === 'floor') {
+            result = width * length;
+            formulaText = `${width.toFixed(2)} * ${length.toFixed(2)} = ${result.toFixed(2)} m²`;
+        } else if (calcType === 'total') {
+            result = 2 * (width + length) * height + (width * length);
+            formulaText = `2 * (${width.toFixed(2)} + ${length.toFixed(2)}) * ${height.toFixed(2)} + (${width.toFixed(2)} * ${length.toFixed(2)}) = ${result.toFixed(2)} m²`;
+        } else if (calcType === 'perimeter') {
+            result = 2 * (width + length);
+            formulaText = `2 * (${width.toFixed(2)} + ${length.toFixed(2)}) = ${result.toFixed(2)} m`;
+        } else if (calcType === 'half') {
+            result = width + length;
+            formulaText = `${width.toFixed(2)} + ${length.toFixed(2)} = ${result.toFixed(2)} m`;
+        }
+
+        if (result > 0) {
+            qtyInput.value = result.toFixed(2);
+            formulaEl.innerText = formulaText;
+        } else {
+            formulaEl.innerText = '-';
         }
     }
 }

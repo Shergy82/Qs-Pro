@@ -107,6 +107,40 @@ class PricingComponent {
         document.getElementById('btn-apply-ai-rate').addEventListener('click', () => {
             this.applyAISuggestionToModal();
         });
+
+        // Room Calculator unit change for add modal custom unit
+        const addUnit = document.getElementById('add-item-unit');
+        if (addUnit) {
+            addUnit.addEventListener('change', () => {
+                this.handleUnitChange('add-item', addUnit.value);
+            });
+        }
+
+        // Room Calculator unit change for adjust modal unit
+        const adjustUnit = document.getElementById('rate-unit-select');
+        if (adjustUnit) {
+            adjustUnit.addEventListener('change', () => {
+                this.handleUnitChange('adjust', adjustUnit.value);
+            });
+        }
+
+        // Bind keyup/change for add-item calculator inputs
+        ['add-item-calc-width', 'add-item-calc-length', 'add-item-calc-height', 'add-item-calc-type'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', () => this.runCalculation('add-item'));
+                el.addEventListener('change', () => this.runCalculation('add-item'));
+            }
+        });
+
+        // Bind keyup/change for adjust calculator inputs
+        ['adjust-calc-width', 'adjust-calc-length', 'adjust-calc-height', 'adjust-calc-type'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', () => this.runCalculation('adjust'));
+                el.addEventListener('change', () => this.runCalculation('adjust'));
+            }
+        });
     }
 
     async updateRatesByMode(mode) {
@@ -259,6 +293,29 @@ class PricingComponent {
         document.getElementById('modal-item-unit').innerText = rate.unit;
         document.getElementById('modal-item-qty').innerText = rate.qty;
         
+        // Populate editable quantity
+        document.getElementById('rate-qty-input').value = rate.qty;
+
+        // Set unit dropdown value
+        const unitSelect = document.getElementById('rate-unit-select');
+        const unitMap = {
+            'Nr': 'Nr', 'm2': 'm2', 'sqm': 'm2', 'm3': 'm3', 'cum': 'm3',
+            'm': 'm', 'lm': 'm', 'linear': 'm', 'Item': 'Item', 'Sum': 'Sum',
+            'hr': 'hr', 'hour': 'hr', 'day': 'day', 't': 't', 'ton': 't'
+        };
+        const mappedUnit = unitMap[rate.unit] || 'Nr';
+        if (unitSelect) {
+            unitSelect.value = mappedUnit;
+        }
+
+        // Reset calculator inputs
+        document.getElementById('adjust-calc-width').value = '';
+        document.getElementById('adjust-calc-length').value = '';
+        document.getElementById('adjust-calc-height').value = '';
+        document.getElementById('adjust-calc-formula').innerText = '-';
+        
+        this.handleUnitChange('adjust', mappedUnit);
+        
         document.getElementById('rate-material').value = rate.materialRate || 0;
         document.getElementById('rate-labour').value = rate.labourRate || 0;
         document.getElementById('rate-plant').value = rate.plantRate || 0;
@@ -294,6 +351,12 @@ class PricingComponent {
         if (!this.activeRateModal) return;
         const rate = this.activeRateModal;
         
+        rate.qty = parseFloat(document.getElementById('rate-qty-input').value) || 0;
+        const selectEl = document.getElementById('rate-unit-select');
+        if (selectEl) {
+            rate.unit = selectEl.value;
+        }
+
         rate.materialRate = parseFloat(document.getElementById('rate-material').value) || 0;
         rate.labourRate = parseFloat(document.getElementById('rate-labour').value) || 0;
         rate.plantRate = parseFloat(document.getElementById('rate-plant').value) || 0;
@@ -741,6 +804,13 @@ class PricingComponent {
             });
         }
 
+        // Reset calculator inputs
+        document.getElementById('add-item-calc-width').value = '';
+        document.getElementById('add-item-calc-length').value = '';
+        document.getElementById('add-item-calc-height').value = '';
+        document.getElementById('add-item-calc-formula').innerText = '-';
+        document.getElementById('add-item-calculator-container').style.display = 'none';
+
         this.setAddMode('library');
         
         document.getElementById('add-estimate-item-modal').style.display = 'flex';
@@ -766,11 +836,16 @@ class PricingComponent {
             btnCustom.classList.remove('active');
             fieldsLib.style.display = 'flex';
             fieldsCustom.style.display = 'none';
+            this.onLibrarySelectChange();
         } else {
             btnLib.classList.remove('active');
             btnCustom.classList.add('active');
             fieldsLib.style.display = 'none';
             fieldsCustom.style.display = 'flex';
+            const selectUnit = document.getElementById('add-item-unit');
+            if (selectUnit) {
+                this.handleUnitChange('add-item', selectUnit.value);
+            }
         }
     }
 
@@ -786,10 +861,12 @@ class PricingComponent {
             previewCat.innerText = rate.category;
             previewCost.innerText = `£${rate.costRate.toFixed(2)}`;
             previewUnit.innerText = rate.unit;
+            this.handleUnitChange('add-item', rate.unit);
         } else {
             previewCat.innerText = '-';
             previewCost.innerText = '£0.00';
             previewUnit.innerText = '-';
+            document.getElementById('add-item-calculator-container').style.display = 'none';
         }
     }
 
@@ -883,6 +960,98 @@ class PricingComponent {
         } catch (err) {
             console.error('Error adding estimate item:', err);
             alert('Error adding item: ' + err.message);
+        }
+    }
+
+    // --- Calculator Helpers ---
+    handleUnitChange(prefix, unit) {
+        const container = document.getElementById(`${prefix}-calculator-container`);
+        const typeSelect = document.getElementById(`${prefix}-calc-type`);
+        const heightGroup = document.getElementById(`${prefix}-calc-height-group`);
+        if (!container || !typeSelect) return;
+        
+        const cleanUnit = (unit || '').toLowerCase().trim();
+        const isM2 = cleanUnit === 'm2' || cleanUnit === 'sqm' || cleanUnit === 'm²';
+        const isM = cleanUnit === 'm' || cleanUnit === 'lm' || cleanUnit === 'linear';
+
+        if (isM2) {
+            container.style.display = 'block';
+            if (heightGroup) heightGroup.style.display = 'block';
+            
+            // Populate m2 calculation types
+            const prevVal = typeSelect.value;
+            typeSelect.innerHTML = `
+                <option value="walls">Wall Area: 2 * (W + L) * H</option>
+                <option value="floor">Floor / Ceiling Area: W * L</option>
+                <option value="total">Walls + Ceiling: 2 * (W + L) * H + (W * L)</option>
+            `;
+            if (['walls', 'floor', 'total'].includes(prevVal)) {
+                typeSelect.value = prevVal;
+            } else {
+                typeSelect.value = 'walls';
+            }
+            this.runCalculation(prefix);
+        } else if (isM) {
+            container.style.display = 'block';
+            if (heightGroup) heightGroup.style.display = 'none';
+            
+            // Populate m/lm calculation types
+            const prevVal = typeSelect.value;
+            typeSelect.innerHTML = `
+                <option value="perimeter">Perimeter: 2 * (W + L)</option>
+                <option value="half">Width + Length: W + L</option>
+            `;
+            if (['perimeter', 'half'].includes(prevVal)) {
+                typeSelect.value = prevVal;
+            } else {
+                typeSelect.value = 'perimeter';
+            }
+            this.runCalculation(prefix);
+        } else {
+            container.style.display = 'none';
+        }
+    }
+
+    runCalculation(prefix) {
+        const widthVal = document.getElementById(`${prefix}-calc-width`);
+        const lengthVal = document.getElementById(`${prefix}-calc-length`);
+        const heightVal = document.getElementById(`${prefix}-calc-height`);
+        const typeSelect = document.getElementById(`${prefix}-calc-type`);
+        const formulaEl = document.getElementById(`${prefix}-calc-formula`);
+        const qtyInput = document.getElementById(prefix === 'add-item' ? 'add-item-qty' : 'rate-qty-input');
+        
+        if (!widthVal || !lengthVal || !typeSelect || !formulaEl || !qtyInput) return;
+
+        const width = parseFloat(widthVal.value) || 0;
+        const length = parseFloat(lengthVal.value) || 0;
+        const height = heightVal ? (parseFloat(heightVal.value) || 0) : 0;
+        const calcType = typeSelect.value;
+
+        let result = 0;
+        let formulaText = '-';
+
+        if (calcType === 'walls') {
+            result = 2 * (width + length) * height;
+            formulaText = `2 * (${width.toFixed(2)} + ${length.toFixed(2)}) * ${height.toFixed(2)} = ${result.toFixed(2)} m²`;
+        } else if (calcType === 'floor') {
+            result = width * length;
+            formulaText = `${width.toFixed(2)} * ${length.toFixed(2)} = ${result.toFixed(2)} m²`;
+        } else if (calcType === 'total') {
+            result = 2 * (width + length) * height + (width * length);
+            formulaText = `2 * (${width.toFixed(2)} + ${length.toFixed(2)}) * ${height.toFixed(2)} + (${width.toFixed(2)} * ${length.toFixed(2)}) = ${result.toFixed(2)} m²`;
+        } else if (calcType === 'perimeter') {
+            result = 2 * (width + length);
+            formulaText = `2 * (${width.toFixed(2)} + ${length.toFixed(2)}) = ${result.toFixed(2)} m`;
+        } else if (calcType === 'half') {
+            result = width + length;
+            formulaText = `${width.toFixed(2)} + ${length.toFixed(2)} = ${result.toFixed(2)} m`;
+        }
+
+        if (result > 0) {
+            qtyInput.value = result.toFixed(2);
+            formulaEl.innerText = formulaText;
+        } else {
+            formulaEl.innerText = '-';
         }
     }
 }
