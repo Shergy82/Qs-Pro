@@ -41,17 +41,11 @@ class QSProApp {
     }
 
     getApiUrl(path) {
-        const backendOrigin = 'http://localhost:3001';
-
         if (!path.startsWith('/')) {
             path = `/${path}`;
         }
 
-        if (window.location.origin.includes('3001')) {
-            return path;
-        }
-
-        return `${backendOrigin}${path}`;
+        return `${window.location.origin}${path}`;
     }
 
     async apiFetch(url, options = {}) {
@@ -130,7 +124,7 @@ class QSProApp {
                 console.error('Auto-login and registration failed:', regErr);
 
                 alert(
-                    'Connection to backend failed. Please check the backend server is running on http://localhost:3001'
+                    `Connection to backend failed. Backend URL: ${window.location.origin}`
                 );
 
                 return false;
