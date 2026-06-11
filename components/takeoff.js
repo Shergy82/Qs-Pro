@@ -33,6 +33,7 @@ class TakeoffComponent {
         
         this.setupCanvasSize();
         this.setupEventListeners();
+        this.loadShapesForActiveWorkspace();
         this.renderCanvas();
         this.renderMeasurementsList();
     }
@@ -78,6 +79,7 @@ class TakeoffComponent {
             if (confirm("Are you sure you want to clear all quantity measurements?")) {
                 this.shapes = [];
                 this.resetActiveDrawing();
+                this.saveShapesToStorage();
                 this.renderCanvas();
                 this.renderMeasurementsList();
             }
@@ -172,7 +174,8 @@ class TakeoffComponent {
                 const formulaEl = document.getElementById('manual-calc-formula');
                 if (formulaEl) formulaEl.innerText = '-';
                 
-                // Re-render
+                // Save and Re-render
+                this.saveShapesToStorage();
                 this.renderCanvas();
                 this.renderMeasurementsList();
             });
@@ -210,6 +213,7 @@ class TakeoffComponent {
         if (!this.canvas) {
             this.init();
         } else {
+            this.loadShapesForActiveWorkspace();
             this.renderCanvas();
             this.renderMeasurementsList();
         }
@@ -316,6 +320,7 @@ class TakeoffComponent {
             unit: unit
         });
 
+        this.saveShapesToStorage();
         this.resetActiveDrawing();
         this.renderCanvas();
         this.renderMeasurementsList();
@@ -365,6 +370,7 @@ class TakeoffComponent {
 
     deleteMeasurement(id) {
         this.shapes = this.shapes.filter(s => s.id !== id);
+        this.saveShapesToStorage();
         this.renderCanvas();
         this.renderMeasurementsList();
     }
@@ -558,7 +564,10 @@ class TakeoffComponent {
 
     renameShape(id, newName) {
         const shape = this.shapes.find(s => s.id === id);
-        if (shape) shape.name = newName;
+        if (shape) {
+            shape.name = newName;
+            this.saveShapesToStorage();
+        }
     }
 
     updateShapeValue(id, newValue) {
@@ -566,6 +575,7 @@ class TakeoffComponent {
         if (shape) {
             shape.value = parseFloat(newValue) || 0;
             shape.isManual = true;
+            this.saveShapesToStorage();
             this.renderCanvas();
             this.renderMeasurementsList();
         }
@@ -680,6 +690,31 @@ class TakeoffComponent {
             formulaEl.innerText = formulaText;
         } else {
             formulaEl.innerText = '-';
+        }
+    }
+    saveShapesToStorage() {
+        if (window.app && window.app.state && window.app.state.activeWorkspaceId) {
+            const key = `takeoff_shapes_${window.app.state.activeWorkspaceId}`;
+            localStorage.setItem(key, JSON.stringify(this.shapes));
+        }
+    }
+
+    loadShapesForActiveWorkspace() {
+        if (window.app && window.app.state && window.app.state.activeWorkspaceId) {
+            const key = `takeoff_shapes_${window.app.state.activeWorkspaceId}`;
+            const stored = localStorage.getItem(key);
+            if (stored) {
+                try {
+                    this.shapes = JSON.parse(stored);
+                } catch (e) {
+                    console.error("Failed to parse stored takeoff shapes:", e);
+                    this.shapes = [];
+                }
+            } else {
+                this.shapes = [];
+            }
+        } else {
+            this.shapes = [];
         }
     }
 }

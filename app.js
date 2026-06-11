@@ -162,12 +162,15 @@ class QSProApp {
                 }))
                 : [];
 
-            if (this.state.workspaces.length > 0 && !this.state.activeWorkspaceId) {
+            const storedWorkspaceId = localStorage.getItem('qs_pro_active_workspace_id');
+            if (storedWorkspaceId && this.state.workspaces.some(w => String(w.id) === String(storedWorkspaceId))) {
+                this.state.activeWorkspaceId = storedWorkspaceId;
+            } else if (this.state.workspaces.length > 0 && !this.state.activeWorkspaceId) {
                 this.state.activeWorkspaceId = this.state.workspaces[0].id;
             }
 
             const activeWorkspace = this.state.workspaces.find(
-                (w) => w.id === this.state.activeWorkspaceId
+                (w) => String(w.id) === String(this.state.activeWorkspaceId)
             );
 
             if (activeWorkspace) {
@@ -882,6 +885,7 @@ class QSProApp {
         if (!wsId) return;
 
         this.state.activeWorkspaceId = wsId;
+        localStorage.setItem('qs_pro_active_workspace_id', wsId);
 
         const workspace = this.state.workspaces.find((w) => String(w.id) === String(wsId));
 

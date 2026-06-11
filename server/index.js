@@ -109,7 +109,8 @@ function localHeuristicExcelParser(filePath) {
       let rateIdx = 4;
       
       // Dynamic header mapping
-      for (let r = 0; r < Math.min(rows.length, 5); r++) {
+      let headerRowIdx = -1;
+      for (let r = 0; r < Math.min(rows.length, 15); r++) {
         const row = rows[r];
         if (!row || !Array.isArray(row)) continue;
         
@@ -126,10 +127,14 @@ function localHeuristicExcelParser(filePath) {
           if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
           if (str === 'rate' || str.includes('unit cost')) rateIdx = idx;
         });
-        if (foundDesc) break;
+        if (foundDesc) {
+          headerRowIdx = r;
+          break;
+        }
       }
       
-      for (let r = 0; r < rows.length; r++) {
+      const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+      for (let r = startRowIdx; r < rows.length; r++) {
         const row = rows[r];
         if (!row || !Array.isArray(row) || row.length === 0) continue;
         
@@ -147,6 +152,20 @@ function localHeuristicExcelParser(filePath) {
         
         // Skip totals and collections
         if (descLower.includes('total') || descLower.includes('collection') || descLower === 'downtakings' || descLower === 'electrical;') {
+          continue;
+        }
+        
+        const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
+        const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
+        const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
+        const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
+        const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
+        
+        if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
+          // Check if it's a sub-heading section
+          if (description.length < 50) {
+            currentSection = description;
+          }
           continue;
         }
         
