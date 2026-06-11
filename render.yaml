@@ -12,8 +12,4 @@ services:
       - key: NODE_ENV
         value: production
       - key: GEMINI_API_KEY
-        sync: false # Set your Gemini API key in the Render dashboard
-    disk:
-      name: db-volume
-      mountPath: /app/server/db
-      sizeGB: 1
+        sync: false
