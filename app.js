@@ -1,16 +1,16 @@
 /**
  * QS Pro AI - Main Coordinator & State Manager
+ * Safer full rewrite
  */
 
 class QSProApp {
     constructor() {
-        // App State Database
         this.state = {
             activePanel: 'dashboard',
-            pricingMode: 'company', // company, market, hybrid
-            targetMargin: 10.0, // %
-            targetContingency: 3.0, // %
-            
+            pricingMode: 'company',
+            targetMargin: 10.0,
+            targetContingency: 3.0,
+
             workspaces: [],
             uploadedFiles: [],
             notifications: [],
@@ -18,8 +18,7 @@ class QSProApp {
             token: null,
             user: null
         };
-        
-        // Component References
+
         this.takeoff = null;
         this.pricing = null;
         this.advisor = null;
@@ -31,8 +30,9 @@ class QSProApp {
         this.setupEventListeners();
         this.setupDragAndDrop();
         this.initRouter();
-        
+
         const loggedIn = await this.autoLogin();
+
         if (loggedIn) {
             await this.loadInitialData();
         } else {
@@ -42,44 +42,75 @@ class QSProApp {
 
     getApiUrl(path) {
         const backendOrigin = 'http://localhost:3001';
+
+        if (!path.startsWith('/')) {
+            path = `/${path}`;
+        }
+
         if (window.location.origin.includes('3001')) {
             return path;
         }
-        return backendOrigin + path;
+
+        return `${backendOrigin}${path}`;
     }
 
     async apiFetch(url, options = {}) {
-        if (!options.headers) {
-            options.headers = {};
-        }
+        const fetchOptions = {
+            ...options,
+            headers: {
+                ...(options.headers || {})
+            }
+        };
+
         if (this.state.token) {
-            options.headers['Authorization'] = `Bearer ${this.state.token}`;
+            fetchOptions.headers.Authorization = `Bearer ${this.state.token}`;
         }
-        if (!(options.body instanceof FormData) && typeof options.body === 'object') {
-            options.headers['Content-Type'] = 'application/json';
-            options.body = JSON.stringify(options.body);
+
+        const isFormData = fetchOptions.body instanceof FormData;
+
+        if (!isFormData && fetchOptions.body && typeof fetchOptions.body === 'object') {
+            fetchOptions.headers['Content-Type'] = 'application/json';
+            fetchOptions.body = JSON.stringify(fetchOptions.body);
         }
-        
-        const response = await fetch(this.getApiUrl(url), options);
+
+        const response = await fetch(this.getApiUrl(url), fetchOptions);
+
+        let data = null;
+        const contentType = response.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+            data = await response.json().catch(() => null);
+        } else {
+            const text = await response.text().catch(() => '');
+            data = text ? { error: text } : null;
+        }
+
         if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.error || `HTTP error! status: ${response.status}`);
+            throw new Error(data?.error || data?.message || `HTTP error: ${response.status}`);
         }
-        return response.json();
+
+        return data;
     }
 
     async autoLogin() {
-        console.log('QS Pro AI - Initializing automatic login...');
+        console.log('QS Pro AI - attempting automatic login...');
+
         try {
             const loginData = await this.apiFetch('/api/auth/login', {
                 method: 'POST',
-                body: { email: 'demo@truecostqs.com', password: 'password123' }
+                body: {
+                    email: 'demo@truecostqs.com',
+                    password: 'password123'
+                }
             });
+
             this.state.token = loginData.token;
             this.state.user = loginData.user;
-            console.log('Login successful for demo user:', this.state.user.email);
-        } catch (err) {
-            console.warn('Login failed, attempting auto-registration...', err.message);
+
+            console.log('Login successful:', this.state.user?.email);
+        } catch (loginErr) {
+            console.warn('Login failed. Trying demo registration...', loginErr.message);
+
             try {
                 const registerData = await this.apiFetch('/api/auth/register', {
                     method: 'POST',
@@ -90,53 +121,78 @@ class QSProApp {
                         estimatorName: 'Phil Estimator'
                     }
                 });
+
                 this.state.token = registerData.token;
                 this.state.user = registerData.user;
-                console.log('Auto-registration & login successful:', this.state.user.email);
+
+                console.log('Registration/login successful:', this.state.user?.email);
             } catch (regErr) {
-                console.error('Auto-login and Auto-registration failed:', regErr);
-                alert('Connection to backend failed. Please verify the backend server is running on http://localhost:3001');
+                console.error('Auto-login and registration failed:', regErr);
+
+                alert(
+                    'Connection to backend failed. Please check the backend server is running on http://localhost:3001'
+                );
+
                 return false;
             }
         }
-        
+
         if (this.state.user) {
-            this.state.targetMargin = this.state.user.margin || 10.0;
-            this.state.targetContingency = this.state.user.contingency || 3.0;
+            this.state.targetMargin = Number(this.state.user.margin) || 10.0;
+            this.state.targetContingency = Number(this.state.user.contingency) || 3.0;
         }
+
         return true;
     }
 
     async loadInitialData() {
         try {
             const projects = await this.apiFetch('/api/projects');
-            this.state.workspaces = projects.map(proj => ({
-                id: proj.id,
-                name: proj.name,
-                client: proj.client || 'Client Pending',
-                dueDate: proj.startDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                baseCost: proj.totalCost || 0,
-                value: proj.sellPrice || 0,
-                status: proj.status || 'Draft',
-                health: 98,
-                margin: proj.margin || 10.0,
-                contingency: proj.contingency || 3.0
-            }));
 
-            if (this.state.workspaces.length > 0) {
+            this.state.workspaces = Array.isArray(projects)
+                ? projects.map((proj) => ({
+                    id: proj.id,
+                    name: proj.name || 'Untitled Tender',
+                    client: proj.client || 'Client Pending',
+                    dueDate:
+                        proj.startDate ||
+                        new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+                            .toISOString()
+                            .split('T')[0],
+                    baseCost: Number(proj.totalCost) || 0,
+                    value: Number(proj.sellPrice) || 0,
+                    status: proj.status || 'Draft',
+                    health: Number(proj.health) || 98,
+                    margin: Number(proj.margin) || 10.0,
+                    contingency: Number(proj.contingency) || 3.0
+                }))
+                : [];
+
+            if (this.state.workspaces.length > 0 && !this.state.activeWorkspaceId) {
                 this.state.activeWorkspaceId = this.state.workspaces[0].id;
-                
-                const activeProj = projects.find(p => p.id === this.state.activeWorkspaceId);
-                if (activeProj) {
-                    this.state.targetMargin = activeProj.margin || 10.0;
-                    this.state.targetContingency = activeProj.contingency || 3.0;
-                }
             }
-            
+
+            const activeWorkspace = this.state.workspaces.find(
+                (w) => w.id === this.state.activeWorkspaceId
+            );
+
+            if (activeWorkspace) {
+                this.state.targetMargin = activeWorkspace.margin || 10.0;
+                this.state.targetContingency = activeWorkspace.contingency || 3.0;
+            }
+
             if (this.pricing) {
-                await this.pricing.loadRatesFromBackend();
-                await this.pricing.loadSupplierFeeds();
-                await this.pricing.loadHistoricalTenders();
+                if (typeof this.pricing.loadRatesFromBackend === 'function') {
+                    await this.pricing.loadRatesFromBackend();
+                }
+
+                if (typeof this.pricing.loadSupplierFeeds === 'function') {
+                    await this.pricing.loadSupplierFeeds();
+                }
+
+                if (typeof this.pricing.loadHistoricalTenders === 'function') {
+                    await this.pricing.loadHistoricalTenders();
+                }
             }
 
             if (this.state.activeWorkspaceId) {
@@ -145,84 +201,103 @@ class QSProApp {
 
             this.renderAll();
         } catch (err) {
-            console.error('Error loading initial data from backend:', err);
+            console.error('Error loading initial data:', err);
+            this.renderAll();
         }
     }
 
     async loadActiveWorkspaceEstimate() {
         if (!this.state.activeWorkspaceId) return;
+
         try {
-            const estimates = await this.apiFetch(`/api/projects/${this.state.activeWorkspaceId}/estimates`);
-            
-            if (this.pricing) {
-                this.pricing.syncRatesFromEstimates(estimates);
+            const estimates = await this.apiFetch(
+                `/api/projects/${this.state.activeWorkspaceId}/estimates`
+            );
+
+            if (this.pricing && typeof this.pricing.syncRatesFromEstimates === 'function') {
+                this.pricing.syncRatesFromEstimates(estimates || []);
             }
-            
+
             if (this.advisor) {
-                this.advisor.generateAIChecklist();
-                this.advisor.recalculateTenderTotals();
+                if (typeof this.advisor.generateAIChecklist === 'function') {
+                    this.advisor.generateAIChecklist();
+                }
+
+                if (typeof this.advisor.recalculateTenderTotals === 'function') {
+                    this.advisor.recalculateTenderTotals();
+                }
             }
 
             if (this.proposal) {
                 this.proposal.veOpportunities = [];
             }
         } catch (err) {
-            console.error('Error loading estimate items:', err);
+            console.error('Error loading active workspace estimate:', err);
         }
     }
 
     setupEventListeners() {
-        // Sidebar Navigation
-        document.querySelectorAll('.menu-item').forEach(item => {
+        document.querySelectorAll('.menu-item').forEach((item) => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 const panelName = item.getAttribute('data-panel');
-                this.switchPanel(panelName);
+                if (panelName) this.switchPanel(panelName);
             });
         });
 
-        // Notifications Toggle Drawer
         const alertBell = document.getElementById('alert-bell');
         const drawer = document.getElementById('notifications-drawer');
-        
-        alertBell.addEventListener('click', (e) => {
-            e.stopPropagation();
-            drawer.classList.toggle('active');
-        });
 
-        document.addEventListener('click', (e) => {
-            if (!drawer.contains(e.target) && e.target !== alertBell && !alertBell.contains(e.target)) {
-                drawer.classList.remove('active');
-            }
-        });
+        if (alertBell && drawer) {
+            alertBell.addEventListener('click', (e) => {
+                e.stopPropagation();
+                drawer.classList.toggle('active');
+            });
 
-        document.getElementById('mark-all-read').addEventListener('click', () => {
-            this.state.notifications = [];
-            this.renderNotifications();
-            this.updateNotificationCount();
-        });
+            document.addEventListener('click', (e) => {
+                if (
+                    drawer &&
+                    !drawer.contains(e.target) &&
+                    e.target !== alertBell &&
+                    !alertBell.contains(e.target)
+                ) {
+                    drawer.classList.remove('active');
+                }
+            });
+        }
 
-        // Process File Scanning Button
+        const markAllRead = document.getElementById('mark-all-read');
+        if (markAllRead) {
+            markAllRead.addEventListener('click', () => {
+                this.state.notifications = [];
+                this.renderNotifications();
+                this.updateNotificationCount();
+            });
+        }
+
         const btnProcess = document.getElementById('btn-process-files');
-        btnProcess.addEventListener('click', () => this.simulateFileAnalysis());
+        if (btnProcess) {
+            btnProcess.addEventListener('click', () => this.simulateFileAnalysis());
+        }
 
-        // File browser input
         const fileInput = document.getElementById('file-input');
-        fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        }
     }
 
     initRouter() {
-        // Handle initial hash routing
         const hash = window.location.hash.replace('#', '');
+
         if (hash && document.getElementById(`${hash}-panel`)) {
-            this.switchPanel(hash);
+            this.switchPanel(hash, false);
         } else {
-            this.switchPanel('dashboard');
+            this.switchPanel('dashboard', false);
         }
 
-        // Handle browser back/forward
         window.addEventListener('hashchange', () => {
             const currentHash = window.location.hash.replace('#', '');
+
             if (currentHash && document.getElementById(`${currentHash}-panel`)) {
                 this.switchPanel(currentHash, false);
             }
@@ -230,64 +305,100 @@ class QSProApp {
     }
 
     switchPanel(panelName, updateHash = true) {
-        if (this.state.activePanel === panelName) return;
+        if (!panelName) return;
 
-        // Hide current active panel
-        const currentActive = document.querySelector('.panel.active');
-        if (currentActive) currentActive.classList.remove('active');
-
-        // Show new panel
         const targetPanel = document.getElementById(`${panelName}-panel`);
-        if (targetPanel) {
-            targetPanel.classList.add('active');
-            this.state.activePanel = panelName;
+        if (!targetPanel) {
+            console.warn(`Panel not found: ${panelName}`);
+            return;
         }
 
-        // Update sidebar active menu highlight
-        document.querySelectorAll('.menu-item').forEach(item => {
-            if (item.getAttribute('data-panel') === panelName) {
-                item.classList.add('active');
-            } else {
-                item.classList.remove('active');
-            }
+        document.querySelectorAll('.panel').forEach((panel) => {
+            panel.classList.remove('active');
         });
 
-        // Update Topbar titles
+        targetPanel.classList.add('active');
+        this.state.activePanel = panelName;
+
+        document.querySelectorAll('.menu-item').forEach((item) => {
+            item.classList.toggle('active', item.getAttribute('data-panel') === panelName);
+        });
+
         const titles = {
-            dashboard: { title: 'Dashboard', subtitle: 'Welcome back, here is your estimation pipeline overview.' },
-            upload: { title: 'Tender Upload & Document Center', subtitle: 'Upload drawings, specifications, bills of quantities, and schedule of rates.' },
-            takeoff: { title: 'AI Quantity Take-Off & Measurements', subtitle: 'Click on plans to measure area dimensions and map architectural scopes.' },
-            pricing: { title: 'Intelligent Pricing Engine', subtitle: 'Compare company pricing against live market indices and regional supplier databases.' },
-            library: { title: 'Global Price Library & Rate Book', subtitle: 'Remember and update materials, plant, subcontractor element prices, and trade daily rates.' },
-            sor: { title: 'Automated Schedule of Rates Pricing', subtitle: 'Map client items to pricing databases instantly using cognitive matching.' },
-            risk: { title: 'Profit & Risk Commercial Advisor', subtitle: 'Review omissions checklist, inflation risk, and calibrate project margin targets.' },
-            proposal: { title: 'Proposal & Client Quotation Generator', subtitle: 'Brand, compile, and finalize the professional commercial quote submission.' }
+            dashboard: {
+                title: 'Dashboard',
+                subtitle: 'Welcome back, here is your estimation pipeline overview.'
+            },
+            upload: {
+                title: 'Tender Upload & Document Center',
+                subtitle: 'Upload drawings, specifications, bills of quantities, and schedule of rates.'
+            },
+            takeoff: {
+                title: 'AI Quantity Take-Off & Measurements',
+                subtitle: 'Click on plans to measure area dimensions and map architectural scopes.'
+            },
+            pricing: {
+                title: 'Intelligent Pricing Engine',
+                subtitle: 'Compare company pricing against live market indices and regional supplier databases.'
+            },
+            library: {
+                title: 'Global Price Library & Rate Book',
+                subtitle: 'Remember and update materials, plant, subcontractor element prices, and trade daily rates.'
+            },
+            sor: {
+                title: 'Automated Schedule of Rates Pricing',
+                subtitle: 'Map client items to pricing databases instantly using cognitive matching.'
+            },
+            risk: {
+                title: 'Profit & Risk Commercial Advisor',
+                subtitle: 'Review omissions checklist, inflation risk, and calibrate project margin targets.'
+            },
+            proposal: {
+                title: 'Proposal & Client Quotation Generator',
+                subtitle: 'Brand, compile, and finalize the professional commercial quote submission.'
+            }
         };
 
-        const titleData = titles[panelName] || { title: 'QS Pro AI', subtitle: 'Quantity Surveying Platform' };
-        document.getElementById('current-panel-title').innerText = titleData.title;
-        document.getElementById('current-panel-subtitle').innerText = titleData.subtitle;
+        const titleData = titles[panelName] || {
+            title: 'QS Pro AI',
+            subtitle: 'Quantity Surveying Platform'
+        };
 
-        if (updateHash) {
+        const titleEl = document.getElementById('current-panel-title');
+        const subtitleEl = document.getElementById('current-panel-subtitle');
+
+        if (titleEl) titleEl.innerText = titleData.title;
+        if (subtitleEl) subtitleEl.innerText = titleData.subtitle;
+
+        if (updateHash && window.location.hash !== `#${panelName}`) {
             window.location.hash = panelName;
         }
 
-        // Trigger panel specific loads
         this.triggerPanelCallback(panelName);
     }
 
     triggerPanelCallback(panelName) {
-        if (panelName === 'takeoff' && this.takeoff) {
+        if (panelName === 'takeoff' && this.takeoff?.onPanelShow) {
             this.takeoff.onPanelShow();
-        } else if (panelName === 'pricing' && this.pricing) {
+        }
+
+        if (panelName === 'pricing' && this.pricing?.render) {
             this.pricing.render();
-        } else if (panelName === 'library' && this.library) {
+        }
+
+        if (panelName === 'library' && this.library?.render) {
             this.library.render();
-        } else if (panelName === 'sor' && this.pricing) {
+        }
+
+        if (panelName === 'sor' && this.pricing?.renderSOR) {
             this.pricing.renderSOR();
-        } else if (panelName === 'risk' && this.advisor) {
+        }
+
+        if (panelName === 'risk' && this.advisor?.render) {
             this.advisor.render();
-        } else if (panelName === 'proposal' && this.proposal) {
+        }
+
+        if (panelName === 'proposal' && this.proposal?.render) {
             this.proposal.render();
         }
     }
@@ -300,82 +411,89 @@ class QSProApp {
         this.updateNotificationCount();
     }
 
-    // --- Metrics & Data Rendering ---
     updateGlobalMetrics() {
-        // Calculate total estimating/pending pipeline value (including Draft, Estimating, Pending, Review)
-        const pipelineBids = this.state.workspaces.filter(ws => 
+        const pipelineBids = this.state.workspaces.filter((ws) =>
             ['Draft', 'Estimating', 'Pending', 'Review'].includes(ws.status)
         );
-        const total = pipelineBids.reduce((sum, ws) => sum + (ws.value || 0), 0);
-        
+
+        const total = pipelineBids.reduce((sum, ws) => sum + (Number(ws.value) || 0), 0);
+
         const globalPipelineValEl = document.getElementById('global-pipeline-val');
         if (globalPipelineValEl) {
             globalPipelineValEl.innerText = this.formatCurrency(total);
         }
-        
-        // Calculate Win Rate (won vs won + lost/submitted)
-        const wonBids = this.state.workspaces.filter(ws => ws.status === 'Won');
-        const wonCount = wonBids.length;
-        const totalClosed = this.state.workspaces.filter(ws => 
+
+        const wonBids = this.state.workspaces.filter((ws) => ws.status === 'Won');
+        const totalClosed = this.state.workspaces.filter((ws) =>
             ['Won', 'Lost', 'Submitted'].includes(ws.status)
         ).length;
-        const winRate = totalClosed > 0 ? (wonCount / totalClosed * 100) : 0.0;
-        
+
+        const winRate = totalClosed > 0 ? (wonBids.length / totalClosed) * 100 : 0;
+
         const globalWinRateEl = document.getElementById('global-win-rate');
         if (globalWinRateEl) {
-            globalWinRateEl.innerText = winRate.toFixed(1) + '%';
+            globalWinRateEl.innerText = `${winRate.toFixed(1)}%`;
         }
 
-        // Update Dashboard Stats Row Elements
         const liveBidsVal = document.getElementById('stat-live-bids-val');
-        const liveBidsTrend = document.getElementById('stat-live-bids-trend');
         if (liveBidsVal) {
-            liveBidsVal.innerText = `${pipelineBids.length} Bid${pipelineBids.length === 1 ? '' : 's'}`;
+            liveBidsVal.innerText = `${pipelineBids.length} Bid${pipelineBids.length === 1 ? '' : 's'
+                }`;
         }
+
+        const liveBidsTrend = document.getElementById('stat-live-bids-trend');
         if (liveBidsTrend) {
-            liveBidsTrend.innerText = pipelineBids.length > 0 ? 
-                `Pipeline: ${this.formatCurrency(total)}` : 
-                'No active bids';
+            liveBidsTrend.innerText =
+                pipelineBids.length > 0 ? `Pipeline: ${this.formatCurrency(total)}` : 'No active bids';
         }
+
+        const wonTotal = wonBids.reduce((sum, ws) => sum + (Number(ws.value) || 0), 0);
 
         const wonVal = document.getElementById('stat-won-val');
+        if (wonVal) wonVal.innerText = this.formatCurrency(wonTotal);
+
         const wonTrend = document.getElementById('stat-won-trend');
-        const wonTotal = wonBids.reduce((sum, ws) => sum + (ws.value || 0), 0);
-        if (wonVal) {
-            wonVal.innerText = this.formatCurrency(wonTotal);
-        }
-        if (wonTrend) {
-            wonTrend.innerText = `${winRate.toFixed(1)}% win rate YTD`;
-        }
+        if (wonTrend) wonTrend.innerText = `${winRate.toFixed(1)}% win rate YTD`;
+
+        const avgMargin =
+            this.state.workspaces.length > 0
+                ? this.state.workspaces.reduce(
+                    (sum, ws) => sum + (Number(ws.margin) || this.state.targetMargin),
+                    0
+                ) / this.state.workspaces.length
+                : this.state.targetMargin;
 
         const avgMarginVal = document.getElementById('stat-avg-margin');
+        if (avgMarginVal) avgMarginVal.innerText = `${avgMargin.toFixed(1)}%`;
+
+        const uncheckedHigh =
+            this.advisor?.checklist?.filter((c) => !c.checked && c.risk === 'high').length || 0;
+
         const avgMarginTrend = document.getElementById('stat-avg-margin-trend');
-        const avgMargin = this.state.workspaces.length > 0 ? 
-            (this.state.workspaces.reduce((sum, ws) => sum + (ws.margin || 10.0), 0) / this.state.workspaces.length) : 
-            this.state.targetMargin;
-        
-        if (avgMarginVal) {
-            avgMarginVal.innerText = `${avgMargin.toFixed(1)}%`;
-        }
         if (avgMarginTrend) {
-            const uncheckedHigh = (this.advisor && this.advisor.checklist) ? 
-                this.advisor.checklist.filter(c => !c.checked && c.risk === 'high').length : 0;
-            avgMarginTrend.innerText = uncheckedHigh > 0 ? 
-                `${uncheckedHigh} high risk exposure` : 
-                'Target margin optimized';
+            avgMarginTrend.innerText =
+                uncheckedHigh > 0 ? `${uncheckedHigh} high risk exposure` : 'Target margin optimized';
         }
 
-        // Update Average Tender Health banner gauge
-        const avgHealth = this.state.workspaces.length > 0 ? 
-            Math.round(this.state.workspaces.reduce((sum, ws) => sum + (ws.health || 0), 0) / this.state.workspaces.length) : 
-            0;
+        const avgHealth =
+            this.state.workspaces.length > 0
+                ? Math.round(
+                    this.state.workspaces.reduce(
+                        (sum, ws) => sum + (Number(ws.health) || 0),
+                        0
+                    ) / this.state.workspaces.length
+                )
+                : 0;
+
         const heroHealthVal = document.getElementById('hero-health-val');
-        const heroHealthCircle = document.getElementById('hero-health-circle');
         if (heroHealthVal) {
             heroHealthVal.innerText = avgHealth > 0 ? `${avgHealth}%` : '--%';
         }
+
+        const heroHealthCircle = document.getElementById('hero-health-circle');
         if (heroHealthCircle) {
             heroHealthCircle.setAttribute('stroke-dasharray', `${avgHealth}, 100`);
+
             if (avgHealth > 85) {
                 heroHealthCircle.style.stroke = 'var(--color-emerald)';
             } else if (avgHealth > 65) {
@@ -389,21 +507,21 @@ class QSProApp {
     }
 
     updateNotificationCount() {
-        const unreadCount = this.state.notifications.filter(n => !n.read).length;
+        const unreadCount = this.state.notifications.filter((n) => !n.read).length;
         const bell = document.getElementById('alert-bell');
-        const indicator = bell.querySelector('.pulse-indicator');
-        
-        if (unreadCount > 0) {
-            indicator.style.display = 'block';
-        } else {
-            indicator.style.display = 'none';
-        }
+        const indicator = bell?.querySelector('.pulse-indicator');
+
+        if (!indicator) return;
+
+        indicator.style.display = unreadCount > 0 ? 'block' : 'none';
     }
 
     renderWorkspaceTable() {
         const tbody = document.getElementById('active-workspaces-tbody');
+        if (!tbody) return;
+
         tbody.innerHTML = '';
-        
+
         if (this.state.workspaces.length === 0) {
             tbody.innerHTML = `
                 <tr>
@@ -414,83 +532,116 @@ class QSProApp {
             `;
             return;
         }
-        
-        this.state.workspaces.forEach(ws => {
-            let statusBadge = '';
-            if (ws.status === 'Estimating') statusBadge = '<span class="badge badge-amber">Estimating</span>';
-            else if (ws.status === 'Won') statusBadge = '<span class="badge badge-emerald">Won</span>';
-            else if (ws.status === 'Submitted') statusBadge = '<span class="badge badge-blue">Submitted</span>';
-            else statusBadge = '<span class="badge badge-gray">Pending</span>';
+
+        this.state.workspaces.forEach((ws) => {
+            let statusBadge = '<span class="badge badge-gray">Pending</span>';
+
+            if (ws.status === 'Estimating') {
+                statusBadge = '<span class="badge badge-amber">Estimating</span>';
+            } else if (ws.status === 'Won') {
+                statusBadge = '<span class="badge badge-emerald">Won</span>';
+            } else if (ws.status === 'Submitted') {
+                statusBadge = '<span class="badge badge-blue">Submitted</span>';
+            } else if (ws.status === 'Draft') {
+                statusBadge = '<span class="badge badge-gray">Draft</span>';
+            }
 
             let healthClass = 'text-emerald';
             if (ws.health < 80) healthClass = 'text-amber';
             if (ws.health < 60) healthClass = 'text-red';
 
             const tr = document.createElement('tr');
+
             tr.innerHTML = `
-                <td class="font-semibold">${ws.name}</td>
-                <td class="text-secondary">${ws.client}</td>
+                <td class="font-semibold">${this.escapeHtml(ws.name)}</td>
+                <td class="text-secondary">${this.escapeHtml(ws.client)}</td>
                 <td>${this.formatDate(ws.dueDate)}</td>
                 <td class="font-bold">${this.formatCurrency(ws.value)}</td>
                 <td>${statusBadge}</td>
-                <td class="${healthClass} font-bold">${ws.health}%</td>
+                <td class="${healthClass} font-bold">${Number(ws.health) || 0}%</td>
                 <td>
                     <div style="display: flex; gap: 6px;">
-                        <button class="btn btn-secondary py-1 px-3 text-xs" onclick="app.loadWorkspace('${ws.id}')">Open</button>
-                        <button class="btn btn-secondary py-1 px-3 text-xs text-red" style="border-color: rgba(239, 68, 68, 0.2);" onclick="app.deleteProject('${ws.id}')">Delete</button>
+                        <button class="btn btn-secondary py-1 px-3 text-xs" data-open-workspace="${ws.id}">Open</button>
+                        <button class="btn btn-secondary py-1 px-3 text-xs text-red" style="border-color: rgba(239, 68, 68, 0.2);" data-delete-workspace="${ws.id}">Delete</button>
                     </div>
                 </td>
             `;
+
             tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll('[data-open-workspace]').forEach((button) => {
+            button.addEventListener('click', () => {
+                this.loadWorkspace(button.getAttribute('data-open-workspace'));
+            });
+        });
+
+        tbody.querySelectorAll('[data-delete-workspace]').forEach((button) => {
+            button.addEventListener('click', () => {
+                this.deleteProject(button.getAttribute('data-delete-workspace'));
+            });
         });
     }
 
     renderNotifications() {
         const list = document.getElementById('notifications-list');
+        if (!list) return;
+
         list.innerHTML = '';
-        
+
         if (this.state.notifications.length === 0) {
             list.innerHTML = `<div class="text-center text-secondary py-5 text-xs">No active alerts</div>`;
             return;
         }
 
-        this.state.notifications.forEach(n => {
+        this.state.notifications.forEach((n) => {
             const div = document.createElement('div');
             div.className = `notification-item ${n.read ? '' : 'unread'}`;
+
             div.innerHTML = `
                 <div class="notification-header">
-                    <span class="notification-title font-semibold">${n.title}</span>
-                    <span class="notification-time">${n.time}</span>
+                    <span class="notification-title font-semibold">${this.escapeHtml(n.title)}</span>
+                    <span class="notification-time">${this.escapeHtml(n.time)}</span>
                 </div>
-                <div class="notification-body">${n.body}</div>
+                <div class="notification-body">${this.escapeHtml(n.body)}</div>
             `;
+
             div.addEventListener('click', () => {
                 n.read = true;
+                this.renderNotifications();
                 this.updateNotificationCount();
                 this.switchPanel('risk');
             });
+
             list.appendChild(div);
         });
     }
 
     renderFileList() {
         const tbody = document.getElementById('file-list-tbody');
+        if (!tbody) return;
+
         tbody.innerHTML = '';
-        
+
+        const pendingFilesCount = this.state.uploadedFiles.filter(
+            (f) => f.status === 'Pending'
+        ).length;
+
         const badge = document.getElementById('upload-badge');
-        const pendingFilesCount = this.state.uploadedFiles.filter(f => f.status === 'Pending').length;
-        
-        if (pendingFilesCount > 0) {
-            badge.style.display = 'inline-block';
-            badge.innerText = pendingFilesCount;
-        } else {
-            badge.style.display = 'none';
+        if (badge) {
+            badge.style.display = pendingFilesCount > 0 ? 'inline-block' : 'none';
+            badge.innerText = String(pendingFilesCount);
         }
 
-        document.getElementById('uploaded-count').innerText = `${this.state.uploadedFiles.length} Files`;
+        const uploadedCount = document.getElementById('uploaded-count');
+        if (uploadedCount) {
+            uploadedCount.innerText = `${this.state.uploadedFiles.length} Files`;
+        }
 
         const btnProcess = document.getElementById('btn-process-files');
-        btnProcess.disabled = pendingFilesCount === 0;
+        if (btnProcess) {
+            btnProcess.disabled = pendingFilesCount === 0;
+        }
 
         if (this.state.uploadedFiles.length === 0) {
             tbody.innerHTML = `
@@ -504,76 +655,112 @@ class QSProApp {
         }
 
         this.state.uploadedFiles.forEach((file, index) => {
-            let statusPill = '';
+            let statusPill = `<span class="status-pill status-pending"><span class="dot"></span>Pending</span>`;
+
             if (file.status === 'Analysed') {
                 statusPill = `<span class="status-pill status-analyzed"><span class="dot"></span>Analysed</span>`;
             } else if (file.status === 'Analyzing') {
                 statusPill = `<span class="status-pill status-analyzing"><span class="dot dot-pulse"></span>Scanning...</span>`;
-            } else {
-                statusPill = `<span class="status-pill status-pending"><span class="dot"></span>Pending</span>`;
             }
 
             const tr = document.createElement('tr');
+
             tr.innerHTML = `
-                <td class="font-semibold">${file.name}</td>
-                <td class="text-secondary">${file.size}</td>
-                <td><span class="badge badge-gray">${file.type}</span></td>
-                <td><span class="text-secondary text-xs">${file.details || 'Awaiting analysis'}</span></td>
+                <td class="font-semibold">${this.escapeHtml(file.name)}</td>
+                <td class="text-secondary">${this.escapeHtml(file.size)}</td>
+                <td><span class="badge badge-gray">${this.escapeHtml(file.type)}</span></td>
+                <td><span class="text-secondary text-xs">${this.escapeHtml(
+                file.details || 'Awaiting analysis'
+            )}</span></td>
                 <td>${statusPill}</td>
                 <td class="text-right">
-                    <button class="text-button text-red font-semibold text-xs" onclick="app.deleteFile(${index})">Remove</button>
+                    <button class="text-button text-red font-semibold text-xs" data-delete-file="${index}">Remove</button>
                 </td>
             `;
+
             tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll('[data-delete-file]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const index = Number(button.getAttribute('data-delete-file'));
+                this.deleteFile(index);
+            });
         });
     }
 
-    // --- Drag and Drop File Simulation ---
     setupDragAndDrop() {
         const dropZone = document.getElementById('drop-zone');
-        
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropZone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                dropZone.style.borderColor = 'var(--color-blue)';
-                dropZone.style.backgroundColor = 'rgba(99, 102, 241, 0.05)';
-            }, false);
+        if (!dropZone) return;
+
+        ['dragenter', 'dragover'].forEach((eventName) => {
+            dropZone.addEventListener(
+                eventName,
+                (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.style.borderColor = 'var(--color-blue)';
+                    dropZone.style.backgroundColor = 'rgba(99, 102, 241, 0.05)';
+                },
+                false
+            );
         });
 
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                dropZone.style.borderColor = 'rgba(255, 255, 255, 0.12)';
-                dropZone.style.backgroundColor = 'rgba(255, 255, 255, 0.01)';
-            }, false);
+        ['dragleave', 'drop'].forEach((eventName) => {
+            dropZone.addEventListener(
+                eventName,
+                (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropZone.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                    dropZone.style.backgroundColor = 'rgba(255, 255, 255, 0.01)';
+                },
+                false
+            );
         });
 
         dropZone.addEventListener('drop', (e) => {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            this.addUploadedFiles(files);
+            const files = e.dataTransfer?.files;
+            if (files?.length) {
+                this.addUploadedFiles(files);
+            }
         });
     }
 
     handleFileSelect(e) {
-        const files = e.target.files;
-        this.addUploadedFiles(files);
+        const files = e.target?.files;
+        if (files?.length) {
+            this.addUploadedFiles(files);
+        }
+
+        if (e.target) {
+            e.target.value = '';
+        }
     }
 
     addUploadedFiles(files) {
-        for (let i = 0; i < files.length; i++) {
-            const f = files[i];
+        Array.from(files).forEach((f) => {
             const sizeMB = (f.size / (1024 * 1024)).toFixed(1);
+            const lowerName = f.name.toLowerCase();
+
             let detectedType = 'Supporting Spec';
-            
-            if (f.name.toLowerCase().endsWith('.pdf')) {
-                if (f.name.toLowerCase().includes('plan') || f.name.toLowerCase().includes('layout') || f.name.toLowerCase().includes('drawing')) {
+
+            if (lowerName.endsWith('.pdf')) {
+                if (
+                    lowerName.includes('plan') ||
+                    lowerName.includes('layout') ||
+                    lowerName.includes('drawing')
+                ) {
                     detectedType = 'Architectural Drawing';
                 } else {
                     detectedType = 'Tender Specification';
                 }
-            } else if (f.name.toLowerCase().endsWith('.xlsx') || f.name.toLowerCase().endsWith('.xls') || f.name.toLowerCase().endsWith('.csv')) {
-                if (f.name.toLowerCase().includes('sor') || f.name.toLowerCase().includes('rates')) {
+            } else if (
+                lowerName.endsWith('.xlsx') ||
+                lowerName.endsWith('.xls') ||
+                lowerName.endsWith('.csv')
+            ) {
+                if (lowerName.includes('sor') || lowerName.includes('rates')) {
                     detectedType = 'SOR Sheet';
                 } else {
                     detectedType = 'Bill of Quantities';
@@ -589,153 +776,190 @@ class QSProApp {
                 details: 'File uploaded. Ready for AI processing.',
                 fileRef: f
             });
-        }
-        
+        });
+
         this.renderFileList();
     }
 
     deleteFile(index) {
+        if (Number.isNaN(index)) return;
+
         this.state.uploadedFiles.splice(index, 1);
         this.renderFileList();
     }
 
     async simulateFileAnalysis() {
-        const pendingFiles = this.state.uploadedFiles.filter(f => f.status === 'Pending');
+        const pendingFiles = this.state.uploadedFiles.filter((f) => f.status === 'Pending');
         if (pendingFiles.length === 0) return;
 
-        document.getElementById('btn-process-files').disabled = true;
+        const btnProcess = document.getElementById('btn-process-files');
+        if (btnProcess) btnProcess.disabled = true;
 
         pendingFiles.forEach((file) => {
             file.status = 'Analyzing';
         });
+
         this.renderFileList();
 
         let count = 0;
+
         for (const fileObj of pendingFiles) {
             try {
                 const rawFile = fileObj.fileRef;
+
                 if (!rawFile) {
                     throw new Error('Raw file reference missing.');
                 }
-                
+
                 const formData = new FormData();
                 formData.append('file', rawFile);
-                
+
                 const result = await this.apiFetch('/api/analyze-document', {
                     method: 'POST',
                     body: formData
                 });
-                
-                if (result.success) {
-                    const wsId = result.projectId;
-                    
-                    // Update UI status to reflect repricing process
-                    fileObj.details = `Extracted ${result.itemsCount} items. Running AI pricing engine...`;
-                    this.renderFileList();
-                    
-                    // Call backend repricer to apply AI rates to the new project estimate
+
+                if (!result?.success) {
+                    throw new Error(result?.error || 'Document analysis failed.');
+                }
+
+                const wsId = result.projectId;
+
+                fileObj.details = `Extracted ${result.itemsCount || 0} items. Running AI pricing engine...`;
+                this.renderFileList();
+
+                if (wsId) {
                     await this.apiFetch(`/api/projects/${wsId}/reprice`, {
                         method: 'POST',
-                        body: { forceLocal: false }
+                        body: {
+                            forceLocal: false
+                        }
                     });
-                    
-                    fileObj.status = 'Analysed';
-                    fileObj.details = `Calculated GIA, scale verified, and priced ${result.itemsCount} items with AI.`;
-                    
-                    // Refetch projects and reload data
-                    await this.loadInitialData();
-                    // Load the newly created workspace
-                    this.loadWorkspace(wsId);
-                    
-                    count++;
-                } else {
-                    throw new Error(result.error || 'Failed analysis');
                 }
+
+                fileObj.status = 'Analysed';
+                fileObj.details = `Calculated GIA, scale verified, and priced ${result.itemsCount || 0
+                    } items with AI.`;
+
+                await this.loadInitialData();
+
+                if (wsId) {
+                    await this.loadWorkspace(wsId, false);
+                }
+
+                count++;
             } catch (err) {
-                console.error('Failed to analyze file:', err);
+                console.error('Failed to analyse file:', err);
+
                 fileObj.status = 'Pending';
                 fileObj.details = `Error: ${err.message}`;
             }
+
             this.renderFileList();
         }
 
         if (count > 0) {
             this.state.notifications.unshift({
-                id: 'n-' + Date.now(),
+                id: `n-${Date.now()}`,
                 title: 'Analysis Completed',
-                body: `${count} tender documents successfully categorized & indexed. Map rates now.`,
+                body: `${count} tender document${count === 1 ? '' : 's'} successfully categorised, indexed and priced.`,
                 time: 'Just now',
                 read: false
             });
+
             this.renderNotifications();
             this.updateNotificationCount();
-            
+
             setTimeout(() => {
-                if (confirm("AI Classification complete! Would you like to view the quantity take-off viewer for measurement validation?")) {
+                const goToTakeoff = confirm(
+                    'AI classification complete. Would you like to view the quantity take-off viewer for measurement validation?'
+                );
+
+                if (goToTakeoff) {
                     this.switchPanel('takeoff');
                 }
             }, 300);
         }
+
+        this.renderFileList();
     }
 
-    // --- Workspace Selector simulation ---
-    loadWorkspace(wsId) {
+    async loadWorkspace(wsId, showAlert = true) {
+        if (!wsId) return;
+
         this.state.activeWorkspaceId = wsId;
-        const workspace = this.state.workspaces.find(w => w.id === wsId);
-        
-        this.state.targetMargin = 10.0;
-        this.state.targetContingency = 3.0;
-        
-        // Show status load alert
-        alert(`Switched to active workspace: ${workspace.name}`);
-        
-        // Load actual project details from database
-        this.loadActiveWorkspaceEstimate().then(() => {
-            this.apiFetch(`/api/projects/${wsId}`).then(proj => {
-                this.state.targetMargin = proj.margin || 10.0;
-                this.state.targetContingency = proj.contingency || 3.0;
-                
-                // Sync sliders and recalculate tender totals with the correct project parameters
-                if (this.advisor) {
+
+        const workspace = this.state.workspaces.find((w) => String(w.id) === String(wsId));
+
+        this.state.targetMargin = workspace?.margin || 10.0;
+        this.state.targetContingency = workspace?.contingency || 3.0;
+
+        if (workspace && showAlert) {
+            alert(`Switched to active workspace: ${workspace.name}`);
+        }
+
+        try {
+            await this.loadActiveWorkspaceEstimate();
+
+            const proj = await this.apiFetch(`/api/projects/${wsId}`);
+
+            this.state.targetMargin = Number(proj.margin) || 10.0;
+            this.state.targetContingency = Number(proj.contingency) || 3.0;
+
+            if (this.advisor) {
+                if (typeof this.advisor.updateAdjusterSliders === 'function') {
                     this.advisor.updateAdjusterSliders();
+                }
+
+                if (typeof this.advisor.recalculateTenderTotals === 'function') {
                     this.advisor.recalculateTenderTotals();
                 }
-                
-                // Switch directly to pricing panel and re-render
-                this.switchPanel('pricing');
-                this.renderAll();
-            }).catch(err => {
-                console.error('Error loading project details:', err);
-                this.switchPanel('pricing');
-                this.renderAll();
-            });
-        });
+            }
+
+            this.switchPanel('pricing');
+            this.renderAll();
+        } catch (err) {
+            console.error('Error loading workspace details:', err);
+
+            this.switchPanel('pricing');
+            this.renderAll();
+        }
     }
 
     openNewProjectModal() {
-        document.getElementById('create-project-modal').style.display = 'flex';
-        document.getElementById('new-proj-start').value = new Date().toISOString().split('T')[0];
+        const modal = document.getElementById('create-project-modal');
+        if (modal) modal.style.display = 'flex';
+
+        const start = document.getElementById('new-proj-start');
+        if (start) start.value = new Date().toISOString().split('T')[0];
     }
 
     closeNewProjectModal() {
-        document.getElementById('create-project-modal').style.display = 'none';
-        document.getElementById('new-proj-name').value = '';
-        document.getElementById('new-proj-client').value = '';
-        document.getElementById('new-proj-address').value = '';
-        document.getElementById('new-proj-ref').value = '';
-        document.getElementById('new-proj-notes').value = '';
-        document.getElementById('new-proj-duration').value = '';
+        const modal = document.getElementById('create-project-modal');
+        if (modal) modal.style.display = 'none';
+
+        [
+            'new-proj-name',
+            'new-proj-client',
+            'new-proj-address',
+            'new-proj-ref',
+            'new-proj-notes',
+            'new-proj-duration'
+        ].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
     }
 
     async saveNewProject() {
-        const name = document.getElementById('new-proj-name').value.trim();
-        const client = document.getElementById('new-proj-client').value.trim();
-        const address = document.getElementById('new-proj-address').value.trim();
-        const tenderRef = document.getElementById('new-proj-ref').value.trim();
-        const tradeCategory = document.getElementById('new-proj-category').value;
-        const startDate = document.getElementById('new-proj-start').value;
-        const duration = document.getElementById('new-proj-duration').value.trim();
-        const notes = document.getElementById('new-proj-notes').value.trim();
+        const name = document.getElementById('new-proj-name')?.value.trim() || '';
+        const client = document.getElementById('new-proj-client')?.value.trim() || '';
+        const address = document.getElementById('new-proj-address')?.value.trim() || '';
+        const tenderRef = document.getElementById('new-proj-ref')?.value.trim() || '';
+        const tradeCategory = document.getElementById('new-proj-category')?.value || '';
+        const startDate = document.getElementById('new-proj-start')?.value || '';
+        const duration = document.getElementById('new-proj-duration')?.value.trim() || '';
+        const notes = document.getElementById('new-proj-notes')?.value.trim() || '';
 
         if (!name) {
             alert('Project Name is required.');
@@ -758,79 +982,109 @@ class QSProApp {
             });
 
             this.closeNewProjectModal();
+
             alert(`Tender project "${name}" created successfully.`);
-            
+
             await this.loadInitialData();
-            this.loadWorkspace(newProj.id);
+
+            if (newProj?.id) {
+                await this.loadWorkspace(newProj.id);
+            }
         } catch (err) {
             console.error('Error creating project:', err);
-            alert('Failed to create project: ' + err.message);
+            alert(`Failed to create project: ${err.message}`);
         }
     }
 
     async deleteProject(wsId) {
-        const workspace = this.state.workspaces.find(w => w.id === wsId);
-        const name = workspace ? workspace.name : 'this project';
-        if (!confirm(`Are you sure you want to delete the tender workspace "${name}"? This will permanently remove all items, calculations, and estimates.`)) return;
-        
+        if (!wsId) return;
+
+        const workspace = this.state.workspaces.find((w) => String(w.id) === String(wsId));
+        const name = workspace?.name || 'this project';
+
+        const confirmed = confirm(
+            `Are you sure you want to delete the tender workspace "${name}"? This will permanently remove all items, calculations, and estimates.`
+        );
+
+        if (!confirmed) return;
+
         try {
             await this.apiFetch(`/api/projects/${wsId}`, {
                 method: 'DELETE'
             });
+
             alert('Project deleted successfully.');
-            
-            if (this.state.activeWorkspaceId === wsId) {
+
+            if (String(this.state.activeWorkspaceId) === String(wsId)) {
                 this.state.activeWorkspaceId = null;
             }
-            
+
             await this.loadInitialData();
-            
+
             if (this.state.workspaces.length > 0) {
-                this.loadWorkspace(this.state.workspaces[0].id);
+                await this.loadWorkspace(this.state.workspaces[0].id, false);
             } else {
                 this.renderAll();
+                this.switchPanel('dashboard');
             }
         } catch (err) {
             console.error('Error deleting project:', err);
-            alert('Failed to delete project: ' + err.message);
+            alert(`Failed to delete project: ${err.message}`);
         }
     }
 
-    // --- Helper Formatters ---
     formatCurrency(amount) {
         return new Intl.NumberFormat('en-GB', {
             style: 'currency',
             currency: 'GBP',
             maximumFractionDigits: 0
-        }).format(amount);
+        }).format(Number(amount) || 0);
     }
 
     formatDate(dateString) {
-        const options = { year: 'numeric', month: 'short', day: 'numeric' };
-        return new Date(dateString).toLocaleDateString('en-GB', options);
+        if (!dateString) return '-';
+
+        const date = new Date(dateString);
+
+        if (Number.isNaN(date.getTime())) {
+            return '-';
+        }
+
+        return date.toLocaleDateString('en-GB', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    }
+
+    escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
     }
 }
 
-// Initialise App on Load
 const app = new QSProApp();
+
+window.app = app;
+
 window.addEventListener('DOMContentLoaded', () => {
-    // Bind modules once they load
-    app.takeoff = window.takeoffComponent;
-    app.pricing = window.pricingComponent;
-    app.advisor = window.advisorComponent;
-    app.proposal = window.proposalComponent;
-    app.library = window.libraryComponent;
-    
-    // Initialize component instances
-    if (app.pricing) app.pricing.init();
-    if (app.advisor) app.advisor.init();
-    if (app.library) app.library.init();
-    
+    app.takeoff = window.takeoffComponent || null;
+    app.pricing = window.pricingComponent || null;
+    app.advisor = window.advisorComponent || null;
+    app.proposal = window.proposalComponent || null;
+    app.library = window.libraryComponent || null;
+
+    if (app.pricing?.init) app.pricing.init();
+    if (app.advisor?.init) app.advisor.init();
+    if (app.library?.init) app.library.init();
+
     app.init();
-    
-    // Setup Advisor items on dashboard
-    if (app.advisor) {
+
+    if (app.advisor?.populateDashboardQuickList) {
         app.advisor.populateDashboardQuickList();
     }
 });
-window.app = app;
