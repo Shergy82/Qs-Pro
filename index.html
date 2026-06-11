@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QS Pro AI – Intelligent Quantity Surveying & Tender Management</title>
+    <!-- Google Fonts: Outfit (headings) & Inter (body, numbers, tables) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>QS Pro <span class="accent-text">AI</span></h1>
+                    <span class="brand-subtitle">Commercial Intelligence</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-menu">
+                <a href="#dashboard" class="menu-item active" data-panel="dashboard">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#upload" class="menu-item" data-panel="upload">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                    <span>Tender Upload</span>
+                    <span class="badge badge-amber" id="upload-badge" style="display: none;">0</span>
+                </a>
+                <a href="#takeoff" class="menu-item" data-panel="takeoff">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z"/><path d="M12 6V18"/><path d="M6 12H18"/></svg>
+                    <span>AI Take-Off</span>
+                    <span class="badge badge-emerald">Live</span>
+                </a>
+                <a href="#pricing" class="menu-item" data-panel="pricing">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    <span>Pricing Engine</span>
+                </a>
+                <a href="#library" class="menu-item" data-panel="library">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                    <span>Price Library</span>
+                </a>
+                <a href="#sor" class="menu-item" data-panel="sor">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14H4v7h5v-7zM19 14h-5v7h5v-7zM9 3H4v7h5V3zM19 3h-5v7h5V3z"/></svg>
+                    <span>SOR Matcher</span>
+                </a>
+                <a href="#risk" class="menu-item" data-panel="risk">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>Risk & Profit</span>
+                    <span class="badge badge-red" id="risk-badge" style="display: none;">0</span>
+                </a>
+                <a href="#proposal" class="menu-item" data-panel="proposal">
+                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                    <span>Proposal Generator</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">PE</div>
+                    <div class="user-details">
+                        <span class="user-name">Phil Estimator</span>
+                        <span class="user-role">Senior QS</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <h2 id="current-panel-title">Dashboard</h2>
+                    <p class="text-secondary" id="current-panel-subtitle">Welcome back, here is your estimation pipeline overview.</p>
+                </div>
+                
+                <div class="topbar-right">
+                    <!-- Global Statistics Widgets -->
+                    <div class="global-metric">
+                        <span class="metric-label">Pipeline Value</span>
+                        <span class="metric-value" id="global-pipeline-val">£0</span>
+                    </div>
+                    <div class="global-metric">
+                        <span class="metric-label">Win Rate</span>
+                        <span class="metric-value text-emerald" id="global-win-rate">0.0%</span>
+                    </div>
+                    
+                    <button class="icon-button notification-trigger" id="alert-bell">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
+                        </svg>
+                        <span class="pulse-indicator"></span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Notification Drawer -->
+            <div class="notifications-drawer" id="notifications-drawer">
+                <div class="drawer-header">
+                    <h3>Commercial Alerts</h3>
+                    <button class="text-button" id="mark-all-read">Clear all</button>
+                </div>
+                <div class="drawer-content" id="notifications-list">
+                    <!-- Dynamic notifications go here -->
+                </div>
+            </div>
+
+            <!-- Dashboard Panel -->
+            <section class="panel active" id="dashboard-panel">
+                <div class="dashboard-grid">
+                    <!-- Welcome Banner Card -->
+                    <div class="card card-hero">
+                        <div class="hero-content">
+                            <h3>Ready to submit a winning bid?</h3>
+                            <p>Your workspace is clear. Upload your first tender drawings to start measuring, pricing, and analyzing commercial risks.</p>
+                            <button class="btn btn-primary" onclick="app.switchPanel('upload')">
+                                <span>Upload New Tender</span>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                        </div>
+                        <div class="hero-graphics">
+                            <div class="circular-chart-container">
+                                <svg class="circular-chart" viewBox="0 0 36 36">
+                                    <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path class="circle" id="hero-health-circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                                <div class="percentage" id="hero-health-val">--%</div>
+                                <div class="chart-label">Avg Tender Health</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pipeline Stats Overview -->
+                    <div class="stats-row">
+                        <div class="card card-stat">
+                            <div class="stat-icon icon-blue">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                            </div>
+                            <div class="stat-data">
+                                <span class="stat-label">Live Estimating Bids</span>
+                                <h3 class="stat-val" id="stat-live-bids-val">0 Bids</h3>
+                                <span class="stat-trend text-muted" id="stat-live-bids-trend">No active bids</span>
+                            </div>
+                        </div>
+                        <div class="card card-stat">
+                            <div class="stat-icon icon-emerald">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+                            </div>
+                            <div class="stat-data">
+                                <span class="stat-label">Bids Won (YTD)</span>
+                                <h3 class="stat-val" id="stat-won-val">£0.00</h3>
+                                <span class="stat-trend text-muted" id="stat-won-trend">0% win rate YTD</span>
+                            </div>
+                        </div>
+                        <div class="card card-stat">
+                            <div class="stat-icon icon-red">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            </div>
+                            <div class="stat-data">
+                                <span class="stat-label">Avg. Margin</span>
+                                <h3 class="stat-val" id="stat-avg-margin">0.0%</h3>
+                                <span class="stat-trend text-muted" id="stat-avg-margin-trend">No active exposure</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Commercial Advisor Widget -->
+                    <div class="card card-advisor-widget">
+                        <div class="card-header">
+                            <div class="header-title">
+                                <svg class="text-amber animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0110 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0112 2z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                <h3>AI Commercial Advisor Insights</h3>
+                            </div>
+                            <button class="text-button" onclick="app.switchPanel('risk')">Open Risk Review →</button>
+                        </div>
+                        <div class="advisor-quick-list" id="advisor-quick-list">
+                            <!-- Populated dynamically by app.js -->
+                        </div>
+                    </div>
+
+                    <!-- Tender Workspace List -->
+                    <div class="card card-workspace">
+                        <div class="card-header">
+                            <div class="header-title">
+                                <h3>Active Tender Workspaces</h3>
+                            </div>
+                            <button class="btn btn-primary" onclick="app.openNewProjectModal()">
+                                <span>+ New Tender/Quote</span>
+                            </button>
+                        </div>
+                        <div class="workspace-table-container">
+                            <table class="workspace-table">
+                                <thead>
+                                    <tr>
+                                        <th>Project Name</th>
+                                        <th>Client</th>
+                                        <th>Due Date</th>
+                                        <th>Bid Value</th>
+                                        <th>Status</th>
+                                        <th>Health Score</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="active-workspaces-tbody">
+                                    <!-- Populated dynamically by app.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Upload Panel -->
+            <section class="panel" id="upload-panel">
+                <div class="upload-container">
+                    <!-- Drop Zone -->
+                    <div class="card drop-zone-card">
+                        <div class="drop-zone" id="drop-zone">
+                            <input type="file" id="file-input" multiple class="file-input" accept=".pdf,.dwg,.xlsx,.xls,.csv,.doc,.docx">
+                            <div class="drop-zone-content">
+                                <div class="drop-zone-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                                </div>
+                                <h3>Drag and drop tender files here</h3>
+                                <p class="text-secondary">Supports PDF Drawings, Excel BoQs, SOR spreadsheets, and specifications</p>
+                                <span class="or-divider">or</span>
+                                <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">Browse Files</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Document Table -->
+                    <div class="card file-list-card">
+                        <div class="card-header">
+                            <div class="header-title">
+                                <h3>Uploaded Tender Packages</h3>
+                                <span class="badge badge-gray" id="uploaded-count">0 Files</span>
+                            </div>
+                            <button class="btn btn-primary" id="btn-process-files" disabled>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+                                <span>Run AI Classification</span>
+                            </button>
+                        </div>
+                        <div class="file-table-container">
+                            <table class="file-table">
+                                <thead>
+                                    <tr>
+                                        <th>File Name</th>
+                                        <th>Size</th>
+                                        <th>File Type</th>
+                                        <th>AI Auto-Classification</th>
+                                        <th>Analysis Status</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="file-list-tbody">
+                                    <tr>
+                                        <td colspan="6" class="text-center text-secondary py-5">
+                                            No files uploaded yet. Drag files in or browse to begin.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Take-Off Panel -->
+            <section class="panel" id="takeoff-panel">
+                <div class="takeoff-container">
+                    <!-- Sidebar Controls -->
+                    <div class="takeoff-sidebar">
+                        <div class="card card-takeoff-tools">
+                            <h3>Measurement Tools</h3>
+                            <div class="tool-buttons">
+                                <button class="btn-tool active" id="tool-polygon" data-tool="polygon">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                    <span>Area (m²)</span>
+                                </button>
+                                <button class="btn-tool" id="tool-line" data-tool="line">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"></line><circle cx="5" cy="19" r="3"></circle><circle cx="19" cy="5" r="3"></circle></svg>
+                                    <span>Linear (m)</span>
+                                </button>
+                                <button class="btn-tool" id="tool-count" data-tool="count">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></svg>
+                                    <span>Count (Qty)</span>
+                                </button>
+                            </div>
+                            
+                            <div class="scale-setting mt-4">
+                                <label for="takeoff-scale">Drawing Scale</label>
+                                <select id="takeoff-scale" class="form-select">
+                                    <option value="50">1:50 (1cm = 0.5m)</option>
+                                    <option value="100" selected>1:100 (1cm = 1.0m)</option>
+                                    <option value="200">1:200 (1cm = 2.0m)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Take-off measurements list -->
+                        <div class="card card-measurements">
+                            <div class="card-header">
+                                <h3>Measurements</h3>
+                                <button class="text-button" id="btn-clear-takeoff">Clear All</button>
+                            </div>
+                            <div class="measurements-list" id="measurements-list">
+                                <!-- Populated dynamically by takeoff.js -->
+                            </div>
+                            
+                            <!-- Manual Measurement Input Form -->
+                            <div class="manual-measurement-form border-t pt-3 mt-3">
+                                <button class="btn btn-secondary w-full text-xs py-1.5" id="btn-toggle-manual-form" type="button">
+                                    <span>+ Add Manual Quantity</span>
+                                </button>
+                                <div id="manual-form-fields" style="display: none; background: rgba(255, 255, 255, 0.02); padding: 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);" class="mt-3">
+                                    <div style="margin-bottom: 8px;">
+                                        <label class="text-xs text-secondary" style="display: block; margin-bottom: 4px;">Description</label>
+                                        <input type="text" id="manual-name" placeholder="e.g. Wall insulation" class="form-input text-xs" style="padding: 6px 10px;">
+                                    </div>
+                                    <div class="flex gap-2" style="margin-bottom: 8px;">
+                                        <div style="flex: 1;">
+                                            <label class="text-xs text-secondary" style="display: block; margin-bottom: 4px;">Quantity</label>
+                                            <input type="number" id="manual-value" placeholder="0.00" class="form-input text-xs" style="padding: 6px 10px;" step="any">
+                                        </div>
+                                        <div style="width: 100px;">
+                                            <label class="text-xs text-secondary" style="display: block; margin-bottom: 4px;">Type</label>
+                                            <select id="manual-unit" class="form-select text-xs" style="padding: 6px 10px; height: 32px;">
+                                                <option value="polygon">Area (m²)</option>
+                                                <option value="line">Linear (m)</option>
+                                                <option value="count">Count (qty)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-primary w-full text-xs" id="btn-add-manual-measure" type="button" style="padding: 6px 12px;">
+                                        Add Measurement
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="measurements-summary mt-4 pt-3 border-t">
+                                <div class="summary-row">
+                                    <span>Total Floor Area:</span>
+                                    <span class="font-bold" id="summary-area">0.00 m²</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Total Linear Run:</span>
+                                    <span class="font-bold" id="summary-length">0.00 m</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Count Items:</span>
+                                    <span class="font-bold" id="summary-count">0 items</span>
+                                </div>
+                                <button class="btn btn-primary w-full mt-4" id="btn-sync-pricing">
+                                    <span>Sync to Pricing Sheet</span>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Canvas/Drawing Area -->
+                    <div class="takeoff-viewer card">
+                        <div class="viewer-header">
+                            <div class="active-file-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                <span id="takeoff-active-filename">Ground_Floor_Plan.pdf</span>
+                            </div>
+                            <div class="viewer-controls">
+                                <button class="icon-button" id="btn-zoom-in" title="Zoom In"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
+                                <button class="icon-button" id="btn-zoom-out" title="Zoom Out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
+                                <button class="icon-button" id="btn-fit-screen" title="Fit to Screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+                            </div>
+                        </div>
+                        <div class="canvas-viewport" id="canvas-viewport">
+                            <canvas id="takeoff-canvas"></canvas>
+                        </div>
+                        <div class="viewer-footer">
+                            <span class="text-secondary text-xs">Left-click to add points/shapes. Right-click or press Enter to complete polygon. Drag points to adjust.</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Pricing Panel -->
+            <section class="panel" id="pricing-panel">
+                <div class="pricing-container">
+                    <!-- Left: Pricing Catalog -->
+                    <div class="pricing-catalog card">
+                        <div class="card-header border-b pb-4">
+                            <div class="header-title-row">
+                                <h3>Pricing Engine Database</h3>
+                                <!-- Pricing Mode Toggles -->
+                                <div class="pricing-mode-toggles">
+                                    <button class="btn-toggle active" data-mode="company">Company Rates</button>
+                                    <button class="btn-toggle" data-mode="market">Market Rates</button>
+                                    <button class="btn-toggle" data-mode="hybrid">Hybrid Pricing</button>
+                                </div>
+                            </div>
+                            <div class="search-filter-row mt-4">
+                                <div class="search-input-wrapper">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                    <input type="text" id="pricing-search" placeholder="Search rates (e.g. Timber, Steel, concrete)...">
+                                </div>
+                                <select id="pricing-category-filter" class="form-select w-48">
+                                    <option value="all">All Categories</option>
+                                    <option value="materials">Materials</option>
+                                    <option value="labor">Labour</option>
+                                    <option value="plant">Plant & Equipment</option>
+                                    <option value="subcontractor">Subcontractor</option>
+                                </select>
+                                <button class="btn btn-secondary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.syncTenderRatesWithLibrary()">
+                                    <span>🔄 Sync from Library</span>
+                                </button>
+                                <button class="btn btn-primary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.openAddEstimateItemModal()">
+                                    <span>+ Add Item</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="pricing-table-container">
+                            <table class="pricing-table">
+                                <thead>
+                                    <tr>
+                                        <th>Description</th>
+                                        <th>Category</th>
+                                        <th>Unit</th>
+                                        <th class="text-right" style="width: 100px;">Quantity</th>
+                                        <th class="text-right">Rate (£)</th>
+                                        <th class="text-right">Total (£)</th>
+                                        <th class="text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pricing-rates-tbody">
+                                    <!-- Populated dynamically by pricing.js -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Right: Historical Library & Supplier Intelligence -->
+                    <div class="pricing-sidebar-flow">
+                        <!-- Supplier Intelligence -->
+                        <div class="card supplier-intel-card">
+                            <h3>Supplier Price Intelligence</h3>
+                            <p class="text-secondary text-xs mb-4">Real-time material cost index gathered from local builders merchants & distributors.</p>
+                            <div class="supplier-list" id="supplier-list">
+                                <!-- Populated dynamically by pricing.js -->
+                            </div>
+                        </div>
+
+                        <!-- Historical Projects Rate comparison -->
+                        <div class="card historical-projects-card">
+                            <h3>Historical Tender Search</h3>
+                            <div class="search-input-wrapper mb-3">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                <input type="text" id="historical-search" placeholder="Compare previous projects...">
+                            </div>
+                            <div class="historical-project-list" id="historical-project-list">
+                                <!-- Populated dynamically by pricing.js -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Price Library Panel -->
+            <section class="panel" id="library-panel">
+                <div class="library-container" style="display: grid; grid-template-columns: 1fr; gap: 24px;">
+                    <!-- Price Library Cards / Tabs -->
+                    <div class="card" style="padding: 24px;">
+                        <div class="card-header border-b pb-4 flex justify-between items-center" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <div class="header-title" style="display: flex; align-items: center; gap: 10px;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 22px; height: 22px; color: var(--color-indigo);"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                                <h3 style="font-family: var(--font-heading); font-size: 1.2rem; font-weight: 600;">Global Price Book & Labour Rates</h3>
+                            </div>
+                            
+                            <!-- Sub Tabs switcher -->
+                            <div class="pricing-mode-toggles" style="display: flex; border: 1px solid var(--border-color); border-radius: 20px; padding: 2px; background-color: rgba(255, 255, 255, 0.02);">
+                                <button class="btn-toggle active" id="btn-lib-tab-rates" onclick="libraryComponent.switchTab('rates')">Materials & Plant Book</button>
+                                <button class="btn-toggle" id="btn-lib-tab-labour" onclick="libraryComponent.switchTab('labour')">Labour Day Rates</button>
+                            </div>
+                        </div>
+
+                        <!-- Tab 1: Materials & Plant Prices Book -->
+                        <div id="lib-tab-rates-content">
+                            <div class="search-filter-row mt-4" style="display: flex; gap: 16px; margin-bottom: 20px; align-items: center;">
+                                <div class="search-input-wrapper" style="position: relative; flex-grow: 1;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                    <input type="text" id="library-search" placeholder="Search price book (e.g. plasterboard, skip hire, concrete)..." oninput="libraryComponent.render()">
+                                </div>
+                                <select id="library-category-filter" class="form-select w-48" style="width: 192px;" onchange="libraryComponent.render()">
+                                    <option value="all">All Categories</option>
+                                    <option value="Material">Materials</option>
+                                    <option value="Plant">Plant & Equipment</option>
+                                </select>
+                                <button class="btn btn-primary" onclick="libraryComponent.openAddElementModal()">
+                                    <span>+ Add Library Element</span>
+                                </button>
+                            </div>
+
+                            <div class="pricing-table-container">
+                                <table class="pricing-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Description</th>
+                                            <th>Category</th>
+                                            <th>Trade Scope</th>
+                                            <th>Unit</th>
+                                            <th class="text-right">Standard Cost Rate (£)</th>
+                                            <th>Supplier Partner</th>
+                                            <th>Last Updated</th>
+                                            <th class="text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="library-rates-tbody">
+                                        <!-- Dynamically loaded -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Tab 2: Labour Day Rates -->
+                        <div id="lib-tab-labour-content" style="display: none;">
+                            <div style="margin-bottom: 16px;">
+                                <p class="text-secondary text-sm">Configure standard UK trade hourly and daily labor rates, default productivity indexes, and complexity difficulty factors. These values are used by the AI engine for automatic rate build-ups.</p>
+                            </div>
+
+                            <div class="pricing-table-container">
+                                <table class="pricing-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Trade Category</th>
+                                            <th class="text-right">Hourly Rate (£)</th>
+                                            <th class="text-right">Daily Rate (£)</th>
+                                            <th class="text-right">Productivity index</th>
+                                            <th class="text-right">Difficulty factor</th>
+                                            <th class="text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="library-labour-tbody">
+                                        <!-- Dynamically loaded -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SOR Panel -->
+            <section class="panel" id="sor-panel">
+                <div class="sor-container">
+                    <div class="card sor-upload-card mb-6">
+                        <div class="sor-header-bar">
+                            <div>
+                                <h3>Automated Schedule of Rates Pricing</h3>
+                                <p class="text-secondary">Upload a client SOR spreadsheet to automatically map item descriptions to historical libraries & live pricing matrices.</p>
+                            </div>
+                            <button class="btn btn-secondary" id="btn-load-sample-sor">Load Sample SOR Sheet</button>
+                        </div>
+                    </div>
+
+                    <div class="card sor-results-card">
+                        <div class="card-header border-b pb-4">
+                            <div class="header-title">
+                                <h3>SOR Items Pricing Table</h3>
+                                <span class="badge badge-emerald" id="sor-mapped-count">0/0 Mapped</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <button class="btn btn-primary" id="btn-apply-sor-rates" disabled>Apply Selected Rates</button>
+                            </div>
+                        </div>
+                        <div class="sor-table-container">
+                            <table class="sor-table">
+                                <thead>
+                                    <tr>
+                                        <th>SOR Ref</th>
+                                        <th>Client Description</th>
+                                        <th>Qty</th>
+                                        <th>Unit</th>
+                                        <th>AI Match Suggestion</th>
+                                        <th>Match Confidence</th>
+                                        <th class="text-right">Suggested Rate (£)</th>
+                                        <th class="text-right">Total (£)</th>
+                                        <th class="text-center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sor-table-tbody">
+                                    <tr>
+                                        <td colspan="9" class="text-center text-secondary py-8">
+                                            No SOR sheets loaded. Click "Load Sample SOR Sheet" above to simulate.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Risk & Profit Panel -->
+            <section class="panel" id="risk-panel">
+                <div class="risk-container">
+                    <!-- Top stats & Gauge -->
+                    <div class="risk-top-grid">
+                        <!-- Score card -->
+                        <div class="card health-score-card">
+                            <h3>Tender Health Score</h3>
+                            <div class="health-gauge-wrapper">
+                                <svg class="gauge-svg" viewBox="0 0 100 50">
+                                    <path class="gauge-bg" d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke-width="8" stroke-linecap="round" />
+                                    <path class="gauge-fill" id="risk-gauge-fill" d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="125.6" stroke-dashoffset="125.6" />
+                                </svg>
+                                <div class="gauge-value" id="risk-gauge-value">--%</div>
+                            </div>
+                            <p class="text-center text-secondary text-sm" id="health-description">Calculating tender commercial viability...</p>
+                        </div>
+
+                        <!-- Strategic Advisory Chat Widget -->
+                        <div class="card advisory-chat-card">
+                            <div class="card-header border-b pb-3">
+                                <div class="flex items-center gap-2">
+                                    <div class="pulse-indicator"></div>
+                                    <h3>Senior QS Virtual Advisor</h3>
+                                </div>
+                            </div>
+                            <div class="chat-messages" id="advisory-chat-messages">
+                                <!-- Populated dynamically by advisor.js -->
+                            </div>
+                            <div class="chat-input-wrapper border-t pt-3">
+                                <input type="text" id="chat-input" placeholder="Ask the advisor (e.g. 'How can I improve the margin on steel?')...">
+                                <button class="btn btn-primary" id="btn-chat-send">Send</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Risk Checklist & Contingency Calculator -->
+                    <div class="risk-bottom-grid mt-6">
+                        <!-- Checklist -->
+                        <div class="card risk-checklist-card">
+                            <h3>Commercial Compliance & Omissions Checklist</h3>
+                            <div class="checklist-items" id="risk-checklist-items">
+                                <!-- Populated dynamically by advisor.js -->
+                            </div>
+                        </div>
+
+                        <!-- Margin and contingency adjusters -->
+                        <div class="card contingency-card">
+                            <h3>Contingency & Profit Margin Adjustments</h3>
+                            <div class="adjuster-sliders mt-4">
+                                <div class="slider-group">
+                                    <div class="slider-labels">
+                                        <span>Target Profit Margin</span>
+                                        <span class="value-highlight" id="lbl-margin-val">10.0%</span>
+                                    </div>
+                                    <input type="range" id="slider-margin" min="0" max="30" step="0.5" value="10" class="form-range">
+                                </div>
+
+                                <div class="slider-group mt-5">
+                                    <div class="slider-labels">
+                                        <span>Risk Contingency Allowance</span>
+                                        <span class="value-highlight" id="lbl-contingency-val">3.0%</span>
+                                    </div>
+                                    <input type="range" id="slider-contingency" min="0" max="15" step="0.5" value="3" class="form-range">
+                                </div>
+
+                                <div class="summary-breakdown-card mt-6">
+                                    <div class="breakdown-row">
+                                        <span>Base Construction Estimate:</span>
+                                        <span id="breakdown-base-cost">£0.00</span>
+                                    </div>
+                                    <div class="breakdown-row">
+                                        <span>Contingency Amount:</span>
+                                        <span id="breakdown-contingency-cost">£0.00</span>
+                                    </div>
+                                    <div class="breakdown-row">
+                                        <span>Marked-up Gross Cost:</span>
+                                        <span id="breakdown-gross-cost">£0.00</span>
+                                    </div>
+                                    <div class="breakdown-row pt-2 border-t mt-2 font-bold text-lg">
+                                        <span>Final Bid Submission:</span>
+                                        <span class="text-emerald" id="breakdown-final-bid">£0.00</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Proposal Panel -->
+            <section class="panel" id="proposal-panel">
+                <div class="proposal-container">
+                    <!-- Left Settings Panel -->
+                    <div class="proposal-settings card">
+                        <h3>Proposal Settings</h3>
+                        <form id="proposal-form" class="mt-4 space-y-4">
+                            <div>
+                                <label class="form-label" for="proposal-company-name">Your Company Branding</label>
+                                <input type="text" id="proposal-company-name" class="form-input" value="Apex Builders Ltd">
+                            </div>
+                            <div>
+                                <label class="form-label" for="proposal-reference">Tender Reference</label>
+                                <input type="text" id="proposal-reference" class="form-input" value="TEN-2026-042">
+                            </div>
+                            <div>
+                                <label class="form-label" for="proposal-contact-person">Estimator Contact</label>
+                                <input type="text" id="proposal-contact-person" class="form-input" value="Phil Estimator">
+                            </div>
+                            <div>
+                                <label class="form-label" for="proposal-intro-text">Executive Summary Intro</label>
+                                <textarea id="proposal-intro-text" class="form-textarea" rows="4">Following review of your tender drawings and architectural specification, we are pleased to submit our commercial quotation for the proposed works. Our cost estimate outlines quantities computed via AI-assisted models and cross-checked against current supplier indices.</textarea>
+                            </div>
+                            
+                            <div class="border-t pt-4">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="chk-include-breakdown" checked class="form-checkbox">
+                                    <span>Include detailed cost breakdown</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer mt-2">
+                                    <input type="checkbox" id="chk-include-ve" checked class="form-checkbox">
+                                    <span>Include Value Engineering options</span>
+                                </label>
+                            </div>
+
+                            <button type="button" class="btn btn-primary w-full mt-6" id="btn-print-proposal">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                                <span>Generate Proposal PDF</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Right Document Preview (Branded sheet layout) -->
+                    <div class="proposal-preview card">
+                        <div class="document-container-preview">
+                            <div class="document-sheet" id="print-sheet-content">
+                                <div class="doc-header">
+                                    <div class="doc-logo-title">
+                                        <div class="doc-brand-logo">A</div>
+                                        <div>
+                                            <h4 id="preview-brand-name">Apex Builders Ltd</h4>
+                                            <span class="text-xs text-secondary">General Contracting & Quantity Surveying</span>
+                                        </div>
+                                    </div>
+                                    <div class="doc-meta text-right">
+                                        <h3 class="text-xl font-bold">COMMERCIAL PROPOSAL</h3>
+                                        <p class="text-xs text-secondary">Ref: <span id="preview-doc-ref">TEN-2026-042</span></p>
+                                        <p class="text-xs text-secondary">Date: <span id="preview-doc-date">June 10, 2026</span></p>
+                                    </div>
+                                </div>
+
+                                <div class="doc-section mt-6">
+                                    <h5>1. Executive Summary</h5>
+                                    <p class="text-sm mt-1" id="preview-doc-intro"></p>
+                                </div>
+
+                                <div class="doc-section mt-6" id="preview-breakdown-section">
+                                    <h5>2. Commercial Cost Summary</h5>
+                                    <table class="doc-table mt-2">
+                                        <thead>
+                                            <tr>
+                                                <th>Description / Package</th>
+                                                <th>Unit</th>
+                                                <th>Qty</th>
+                                                <th class="text-right">Unit Rate (£)</th>
+                                                <th class="text-right">Net Total (£)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="preview-breakdown-tbody">
+                                            <!-- Dynamically inserted -->
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <td colspan="4" class="text-right font-bold">Subtotal (Net Cost):</td>
+                                                <td class="text-right font-bold" id="preview-doc-subtotal">£0.00</td>
+                                            </tr>
+                                            <tr>
+                                                <td colspan="4" class="text-right">Risk Contingency allowance:</td>
+                                                <td class="text-right" id="preview-doc-contingency">£0.00</td>
+                                            </tr>
+                                            <tr class="bg-highlight font-bold">
+                                                <td colspan="4" class="text-right">Total Proposed Tender Value:</td>
+                                                <td class="text-right text-emerald text-lg" id="preview-doc-total">£0.00</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+
+                                <div class="doc-section mt-6" id="preview-ve-section">
+                                    <h5>3. Value Engineering Opportunities</h5>
+                                    <p class="text-xs text-secondary mb-2">We have identified the following opportunities to reduce cost without compromising quality or safety.</p>
+                                    <div class="ve-opportunities-list" id="preview-ve-list">
+                                        <!-- Dynamically inserted -->
+                                    </div>
+                                </div>
+
+                                <div class="doc-footer mt-8 border-t pt-4">
+                                    <p class="text-center text-xs text-secondary">QS Pro AI Estimation System • Approved for Submission by <span id="preview-doc-contact">Phil Estimator</span></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Rate Adjustment Modal -->
+    <div id="rate-adjustment-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content card">
+            <div class="modal-header border-b pb-3 mb-4">
+                <h3 id="modal-item-title">Adjust Rate Build-up</h3>
+                <button class="modal-close" onclick="pricingComponent.closeAdjustModal()">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Description info -->
+                <div class="item-scope-details p-3" style="background: rgba(255,255,255,0.02); border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); margin-bottom: 20px;">
+                    <div class="text-xs text-secondary">Active Scope Item</div>
+                    <div id="modal-item-desc" class="font-bold text-sm mt-1">Redecorate Sitting Room ceiling</div>
+                    <div class="flex gap-4 mt-2">
+                        <span class="text-xs text-secondary">Unit: <strong id="modal-item-unit" class="text-primary">Item</strong></span>
+                        <span class="text-xs text-secondary">Current Quantity: <strong id="modal-item-qty" class="text-primary">1</strong></span>
+                    </div>
+                </div>
+                
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                    <!-- Manual Inputs -->
+                    <div class="manual-adjust-fields">
+                        <h4 class="text-xs text-secondary uppercase font-bold tracking-wider mb-3">Cost Breakdown</h4>
+                        <div style="margin-bottom: 12px;">
+                            <label class="text-xs text-secondary block mb-1">Material Rate (£)</label>
+                            <input type="number" id="rate-material" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <label class="text-xs text-secondary block mb-1">Labour Rate (£)</label>
+                            <input type="number" id="rate-labour" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <label class="text-xs text-secondary block mb-1">Plant Rate (£)</label>
+                            <input type="number" id="rate-plant" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <label class="text-xs text-secondary block mb-1">Subcontractor Rate (£)</label>
+                            <input type="number" id="rate-sub" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                        </div>
+                        
+                        <div class="border-t pt-3 mt-3">
+                            <label class="text-xs text-secondary block">Calculated Unit Rate</label>
+                            <div class="text-xl font-bold text-emerald mt-1">£<span id="rate-total-calc">0.00</span></div>
+                        </div>
+                    </div>
+                    
+                    <!-- AI Price Suggestion Panel -->
+                    <div class="ai-lookup-panel p-3" style="background: rgba(99, 102, 241, 0.03); border: 1px dashed rgba(99, 102, 241, 0.2); border-radius: var(--border-radius-sm); display: flex; flex-direction: column; padding: 16px !important;">
+                        <h4 class="flex items-center gap-2 text-indigo" style="color: var(--color-indigo); font-size: 0.9rem; margin-bottom: 8px;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><path d="M12 2a10 10 0 0110 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0112 2z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                            <span>AI Price Intelligence</span>
+                        </h4>
+                        <p class="text-xs text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 16px;">Query the AI model to search for current UK industry standard rates for this specific task and unit.</p>
+                        
+                        <button type="button" class="btn btn-primary text-xs" id="btn-trigger-ai-lookup" style="padding: 8px 12px;">
+                            <span id="ai-lookup-btn-text">🔍 AI Market Rate Lookup</span>
+                        </button>
+                        
+                        <!-- AI Results Container -->
+                        <div id="ai-lookup-results" style="display: none; margin-top: 16px;" class="flex-grow flex flex-col justify-between">
+                            <div class="space-y-2">
+                                <div class="flex justify-between items-center rounded" style="background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2); padding: 8px 12px; margin-bottom: 8px;">
+                                    <span class="text-xs text-secondary">AI Suggested Rate:</span>
+                                    <span class="font-bold text-indigo text-sm" id="ai-suggested-val" style="color: var(--color-indigo); font-size: 1rem;">£0.00</span>
+                                </div>
+                                <div class="text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 6px;">
+                                    <strong>Range:</strong> <span id="ai-suggested-range" class="text-primary">£0.00 - £0.00</span>
+                                </div>
+                                <div class="text-secondary" style="font-size: 0.75rem; line-height: 1.4; border-top: 1px solid var(--border-color); padding-top: 8px; margin-bottom: 6px;">
+                                    <strong>Analysis:</strong> <span id="ai-suggested-explain" class="text-primary">Explanation...</span>
+                                </div>
+                                <div class="text-muted" style="font-size: 0.7rem; font-style: italic; margin-top: 12px;">
+                                    Source: <span id="ai-suggested-source">BCIS Index</span>
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn text-xs w-full" id="btn-apply-ai-rate" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); color: var(--color-emerald); padding: 8px 12px; margin-top: 16px;">
+                                Apply AI Suggested Rate
+                            </button>
+                        </div>
+                        
+                        <!-- AI Loading Indicator -->
+                        <div id="ai-lookup-loading" style="display: none; margin-top: 32px;" class="text-center">
+                            <div class="spinner animate-spin" style="border: 2px solid rgba(255,255,255,0.1); border-top: 2px solid var(--color-indigo); border-radius: 50%; width: 24px; height: 24px; margin: 0 auto 12px; animation: spin 1s linear infinite;"></div>
+                            <div class="text-xs text-secondary">AI is querying UK pricing indices...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="pricingComponent.closeAdjustModal()">Cancel</button>
+                <button class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="pricingComponent.saveAdjustModal()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Project Modal -->
+    <div id="create-project-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content card" style="max-width: 500px;">
+            <div class="modal-header border-b pb-3 mb-4">
+                <h3>Create New Tender / Quote</h3>
+                <button class="modal-close" onclick="app.closeNewProjectModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <div>
+                    <label class="form-label" for="new-proj-name">Project Name *</label>
+                    <input type="text" id="new-proj-name" class="form-input" placeholder="e.g. Oakridge Extension">
+                </div>
+                <div>
+                    <label class="form-label" for="new-proj-client">Client Name</label>
+                    <input type="text" id="new-proj-client" class="form-input" placeholder="e.g. Mr & Mrs Smith">
+                </div>
+                <div>
+                    <label class="form-label" for="new-proj-address">Site Address</label>
+                    <input type="text" id="new-proj-address" class="form-input" placeholder="e.g. 12 High Street, Bristol">
+                </div>
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label class="form-label" for="new-proj-ref">Tender Reference</label>
+                        <input type="text" id="new-proj-ref" class="form-input" placeholder="e.g. TEN-2026-05">
+                    </div>
+                    <div>
+                        <label class="form-label" for="new-proj-category">Trade Category</label>
+                        <select id="new-proj-category" class="form-select" style="height: 38px;">
+                            <option value="General">General Construction</option>
+                            <option value="Groundworks">Groundworks</option>
+                            <option value="Joinery">Joinery & Timber</option>
+                            <option value="Plastering">Plastering & Skimming</option>
+                            <option value="Painting">Painting & Decorating</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label class="form-label" for="new-proj-start">Start Date</label>
+                        <input type="date" id="new-proj-start" class="form-input">
+                    </div>
+                    <div>
+                        <label class="form-label" for="new-proj-duration">Duration</label>
+                        <input type="text" id="new-proj-duration" class="form-input" placeholder="e.g. 6 weeks">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label" for="new-proj-notes">Project Notes / Scope Summary</label>
+                    <textarea id="new-proj-notes" class="form-textarea" rows="3" placeholder="Brief outline of tender scope..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="app.closeNewProjectModal()">Cancel</button>
+                <button class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="app.saveNewProject()">Create Project</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Library Item Modal -->
+    <div id="library-item-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content card" style="max-width: 500px;">
+            <div class="modal-header border-b pb-3 mb-4">
+                <h3 id="library-modal-title">Add Element to Price Book</h3>
+                <button class="modal-close" onclick="libraryComponent.closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <input type="hidden" id="library-item-id">
+                <div>
+                    <label class="form-label" for="library-item-name">Element Description / Name *</label>
+                    <input type="text" id="library-item-name" class="form-input" placeholder="e.g. Standard Plasterboard 12.5mm">
+                </div>
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label class="form-label" for="library-item-category">Category</label>
+                        <select id="library-item-category" class="form-select" style="height: 38px;">
+                            <option value="Material">Material</option>
+                            <option value="Plant">Plant & Equipment</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="library-item-trade">Trade Scope</label>
+                        <input type="text" id="library-item-trade" class="form-input" placeholder="e.g. Plastering">
+                    </div>
+                </div>
+                <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label class="form-label" for="library-item-unit">Unit</label>
+                        <select id="library-item-unit" class="form-select" style="height: 38px;">
+                            <option value="Nr">Nr / Each</option>
+                            <option value="m2">m²</option>
+                            <option value="m3">m³</option>
+                            <option value="m">m (Linear)</option>
+                            <option value="Item">Item</option>
+                            <option value="Sum">Sum</option>
+                            <option value="t">t (Tonne)</option>
+                            <option value="Bag">Bag</option>
+                            <option value="Sheet">Sheet</option>
+                            <option value="Length">Length</option>
+                            <option value="Day">Day</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label" for="library-item-cost">Standard Cost Rate (£) *</label>
+                        <input type="number" id="library-item-cost" class="form-input" placeholder="0.00" step="any">
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label" for="library-item-supplier">Supplier Partner</label>
+                    <input type="text" id="library-item-supplier" class="form-input" placeholder="e.g. Travis Perkins">
+                </div>
+                <div>
+                    <label class="form-label" for="library-item-url">Sourcing Reference URL</label>
+                    <input type="text" id="library-item-url" class="form-input" placeholder="https://www.travisperkins.co.uk/...">
+                </div>
+            </div>
+            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="libraryComponent.closeModal()">Cancel</button>
+                <button class="btn btn-primary text-xs" style="padding: 8px 16px;" id="btn-save-library-item" onclick="libraryComponent.saveElement()">Save Element</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Estimate Item Modal -->
+    <div id="add-estimate-item-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content card" style="max-width: 500px;">
+            <div class="modal-header border-b pb-3 mb-4">
+                <h3>Add Item to Project Estimate</h3>
+                <button class="modal-close" onclick="pricingComponent.closeAddEstimateItemModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Mode toggle: Library vs Custom -->
+                <div class="flex" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 2px; background-color: rgba(255, 255, 255, 0.02);">
+                    <button class="btn-toggle active" id="btn-add-mode-library" style="flex: 1; border-radius: 6px;" onclick="pricingComponent.setAddMode('library')">From Price Library</button>
+                    <button class="btn-toggle" id="btn-add-mode-custom" style="flex: 1; border-radius: 6px;" onclick="pricingComponent.setAddMode('custom')">Custom New Element</button>
+                </div>
+
+                <!-- Library selection fields -->
+                <div id="add-item-library-fields" style="display: flex; flex-direction: column; gap: 14px;">
+                    <div>
+                        <label class="form-label" for="add-item-library-select">Select Price Book Element</label>
+                        <select id="add-item-library-select" class="form-select" onchange="pricingComponent.onLibrarySelectChange()" style="height: 38px;">
+                            <!-- Options filled dynamically -->
+                        </select>
+                    </div>
+                    
+                    <div id="add-item-library-preview" class="p-3" style="background: rgba(255,255,255,0.02); border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); font-size: 0.8rem;">
+                        <div>Category: <strong id="add-item-lib-category" class="text-primary">-</strong></div>
+                        <div style="margin-top: 4px;">Standard Cost: <strong id="add-item-lib-cost" class="text-emerald">£0.00</strong> per <strong id="add-item-lib-unit">-</strong></div>
+                    </div>
+                </div>
+
+                <!-- Custom fields (hidden in library mode, shown in custom mode) -->
+                <div id="add-item-custom-fields" style="display: none; flex-direction: column; gap: 14px;">
+                    <div>
+                        <label class="form-label" for="add-item-desc">Item Description *</label>
+                        <input type="text" id="add-item-desc" class="form-input" placeholder="e.g. Redecorate Sitting Room ceiling">
+                    </div>
+                    <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div>
+                            <label class="form-label" for="add-item-category">Category</label>
+                            <select id="add-item-category" class="form-select" style="height: 38px;">
+                                <option value="materials">Materials</option>
+                                <option value="labor">Labour</option>
+                                <option value="plant">Plant & Equipment</option>
+                                <option value="subcontractor">Subcontractor</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" for="add-item-unit">Unit</label>
+                            <select id="add-item-unit" class="form-select" style="height: 38px;">
+                                <option value="Nr">Nr</option>
+                                <option value="m2">m²</option>
+                                <option value="m3">m³</option>
+                                <option value="m">m</option>
+                                <option value="Item">Item</option>
+                                <option value="Sum">Sum</option>
+                                <option value="hr">hr</option>
+                                <option value="day">day</option>
+                                <option value="t">t</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div>
+                            <label class="form-label" for="add-item-rate">Unit Cost Rate (£) *</label>
+                            <input type="number" id="add-item-rate" class="form-input" placeholder="0.00" step="any">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quantity field (always visible) -->
+                <div>
+                    <label class="form-label" for="add-item-qty">Quantity *</label>
+                    <input type="number" id="add-item-qty" class="form-input" placeholder="1.00" value="1.00" step="any">
+                </div>
+            </div>
+            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="pricingComponent.closeAddEstimateItemModal()">Cancel</button>
+                <button class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="pricingComponent.saveEstimateItem()">Add to Estimate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="app.js"></script>
+    <script src="components/takeoff.js"></script>
+    <script src="components/pricing.js"></script>
+    <script src="components/library.js"></script>
+    <script src="components/advisor.js"></script>
+    <script src="components/proposal.js"></script>
+</body>
+</html>

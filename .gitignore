@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Environment files
+.env
+.env*.local
+server/.env
+server/.env*.local
+
+# Local databases
+server/qs.db
+server/qs.db-journal
+qs.db
+qs.db-journal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Uploads
+server/uploads/*
+uploads/*
+!server/uploads/.gitkeep
+!uploads/.gitkeep

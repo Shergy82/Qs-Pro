@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: qs-pro-ai
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: DB_PATH
+        value: /app/server/db/qs.db
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false # Set your Gemini API key in the Render dashboard
+    disk:
+      name: db-volume
+      mountPath: /app/server/db
+      sizeGB: 1
