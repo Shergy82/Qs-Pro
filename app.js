@@ -143,7 +143,32 @@ class QSProApp {
 
     async loadInitialData() {
         try {
-            const projects = await this.apiFetch('/api/projects');
+            let projects = await this.apiFetch('/api/projects');
+
+            // Self-healing startup sync from LocalStorage backup
+            try {
+                const backups = JSON.parse(localStorage.getItem('qs_pro_tenders_backup') || '{}');
+                const backendProjectIds = new Set((projects || []).map(p => String(p.id)));
+                let syncedAny = false;
+
+                for (const backupId of Object.keys(backups)) {
+                    if (!backendProjectIds.has(backupId)) {
+                        console.log(`[Backup Sync] Restoring project ${backupId} to database...`);
+                        const projData = backups[backupId];
+                        await this.apiFetch('/api/projects/sync', {
+                            method: 'POST',
+                            body: projData
+                        });
+                        syncedAny = true;
+                    }
+                }
+
+                if (syncedAny) {
+                    projects = await this.apiFetch('/api/projects');
+                }
+            } catch (syncErr) {
+                console.error('[Backup Sync Error]:', syncErr);
+            }
 
             this.state.workspaces = Array.isArray(projects)
                 ? projects.map((proj) => ({
@@ -213,6 +238,8 @@ class QSProApp {
                 `/api/projects/${this.state.activeWorkspaceId}/estimates`
             );
 
+            this.backupActiveProject(estimates);
+
             if (this.pricing && typeof this.pricing.syncRatesFromEstimates === 'function') {
                 this.pricing.syncRatesFromEstimates(estimates || []);
             }
@@ -232,6 +259,40 @@ class QSProApp {
             }
         } catch (err) {
             console.error('Error loading active workspace estimate:', err);
+        }
+    }
+
+    backupActiveProject(estimates) {
+        if (!this.state.activeWorkspaceId) return;
+        const workspace = this.state.workspaces.find(w => String(w.id) === String(this.state.activeWorkspaceId));
+        if (!workspace) return;
+
+        try {
+            const backups = JSON.parse(localStorage.getItem('qs_pro_tenders_backup') || '{}');
+            backups[this.state.activeWorkspaceId] = {
+                id: workspace.id,
+                name: workspace.name,
+                client: workspace.client,
+                address: workspace.address,
+                dateCreated: workspace.dateCreated || new Date().toISOString().split('T')[0],
+                status: workspace.status,
+                totalCost: workspace.baseCost,
+                sellPrice: workspace.value,
+                margin: workspace.margin,
+                contingency: workspace.contingency,
+                tenderRef: workspace.tenderRef || '',
+                tradeCategory: workspace.tradeCategory || '',
+                startDate: workspace.startDate || '',
+                duration: workspace.duration || '',
+                notes: workspace.notes || '',
+                wasteAllowance: workspace.wasteAllowance || 10.0,
+                labourUplift: workspace.labourUplift || 0.0,
+                plantOverhead: workspace.plantOverhead || 5.0,
+                items: estimates || []
+            };
+            localStorage.setItem('qs_pro_tenders_backup', JSON.stringify(backups));
+        } catch (e) {
+            console.error('Failed to backup active project:', e);
         }
     }
 
@@ -924,7 +985,11 @@ class QSProApp {
             const matchCat = String(item.category || '').toLowerCase().includes(filterText);
             
             if (!filterText || matchDesc || matchSection || matchCat) {
-                item.selected = checked;
+                if (checked === 'yes') {
+                    item.selected = (item.status === 'Yes');
+                } else {
+                    item.selected = !!checked;
+                }
             }
         });
         

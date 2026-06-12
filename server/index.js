@@ -1079,6 +1079,81 @@ app.post('/api/projects', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/projects/sync', requireAuth, async (req, res) => {
+  const {
+    id, name, client, address, dateCreated, status, totalCost, sellPrice, margin,
+    tenderRef, tradeCategory, startDate, duration, notes,
+    wasteAllowance, contingency, labourUplift, plantOverhead, items
+  } = req.body;
+
+  if (!id || !name || !Array.isArray(items)) {
+    return res.status(400).json({ error: 'id, name, and items array are required for sync.' });
+  }
+
+  try {
+    const db = await getDbConnection();
+
+    // 1. Delete existing project if any (to update it completely)
+    await db.run('DELETE FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    await db.run('DELETE FROM estimate_items WHERE project_id = ?', [id]);
+
+    // 2. Insert project details
+    await db.run(
+      `INSERT INTO projects (
+        id, user_id, name, client, address, dateCreated, status, totalCost, sellPrice, margin,
+        tenderRef, tradeCategory, startDate, duration, notes,
+        wasteAllowance, contingency, labourUplift, plantOverhead
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, req.user.id, name, client || '', address || '', dateCreated || new Date().toISOString().split('T')[0],
+        status || 'Draft', totalCost || 0, sellPrice || 0, margin || 20.0,
+        tenderRef || '', tradeCategory || '', startDate || '', duration || '', notes || '',
+        wasteAllowance || 10.0, contingency || 5.0, labourUplift || 0.0, plantOverhead || 5.0
+      ]
+    );
+
+    // 3. Insert items
+    const insertItem = await db.prepare(
+      `INSERT INTO estimate_items (
+        id, project_id, section, description, quantity, unit, labourRate, materialRate,
+        plantRate, subRate, isAIIdentified, confidence, warnings, merchant, productUrl, assumptions, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    for (const item of items) {
+      await insertItem.run(
+        item.id || crypto.randomUUID(),
+        id,
+        item.section || 'General',
+        item.description || 'Unknown Item',
+        item.quantity || 0,
+        item.unit || 'Item',
+        item.labourRate || 0,
+        item.materialRate || 0,
+        item.plantRate || 0,
+        item.subRate || 0,
+        item.isAIIdentified !== undefined ? item.isAIIdentified : 1,
+        item.confidence || 'Medium',
+        item.warnings || '[]',
+        item.merchant || '',
+        item.productUrl || '',
+        item.assumptions || '',
+        item.notes || ''
+      );
+    }
+    await insertItem.finalize();
+
+    // 4. Recalculate
+    await recalculateProjectCost(db, id);
+
+    await db.close();
+    res.json({ success: true, projectId: id });
+  } catch (error) {
+    console.error('[Sync API Error]:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.put('/api/projects/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const {

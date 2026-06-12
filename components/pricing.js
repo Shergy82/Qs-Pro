@@ -308,13 +308,36 @@ class PricingComponent {
             unitSelect.value = mappedUnit;
         }
 
-        // Reset calculator inputs
-        document.getElementById('adjust-calc-width').value = '';
-        document.getElementById('adjust-calc-length').value = '';
-        document.getElementById('adjust-calc-height').value = '';
-        document.getElementById('adjust-calc-formula').innerText = '-';
-        
+        // Check for remembered room measurements
+        let remembered = null;
+        if (this.roomMeasurements && rate.section) {
+            remembered = this.roomMeasurements[rate.section.toLowerCase()];
+        }
+
         this.handleUnitChange('adjust', mappedUnit);
+
+        // Populate calculator inputs from memory if available
+        if (remembered) {
+            document.getElementById('adjust-calc-width').value = remembered.width || '';
+            document.getElementById('adjust-calc-length').value = remembered.length || '';
+            document.getElementById('adjust-calc-height').value = remembered.height || '';
+            
+            const calcTypeSelect = document.getElementById('adjust-calc-type');
+            if (calcTypeSelect) {
+                if (mappedUnit === 'm2') {
+                    calcTypeSelect.value = (remembered.height > 0) ? 'walls' : 'floor';
+                } else if (mappedUnit === 'm') {
+                    calcTypeSelect.value = 'perimeter';
+                }
+            }
+            this.runCalculation('adjust');
+        } else {
+            // Reset calculator inputs if no memory
+            document.getElementById('adjust-calc-width').value = '';
+            document.getElementById('adjust-calc-length').value = '';
+            document.getElementById('adjust-calc-height').value = '';
+            document.getElementById('adjust-calc-formula').innerText = '-';
+        }
         
         document.getElementById('rate-material').value = rate.materialRate || 0;
         document.getElementById('rate-labour').value = rate.labourRate || 0;
@@ -363,6 +386,53 @@ class PricingComponent {
         rate.subRate = parseFloat(document.getElementById('rate-sub').value) || 0;
         
         rate.current = rate.materialRate + rate.labourRate + rate.plantRate + rate.subRate;
+
+        // Remember room calculator measurements and propagate
+        const width = parseFloat(document.getElementById('adjust-calc-width').value) || 0;
+        const length = parseFloat(document.getElementById('adjust-calc-length').value) || 0;
+        const height = parseFloat(document.getElementById('adjust-calc-height').value) || 0;
+
+        if (rate.section && width > 0 && length > 0) {
+            if (!this.roomMeasurements) {
+                this.roomMeasurements = {};
+            }
+            const roomKey = rate.section.toLowerCase();
+            this.roomMeasurements[roomKey] = { width, length, height };
+
+            if (app.state.activeWorkspaceId) {
+                localStorage.setItem(`qs_pro_room_measurements_${app.state.activeWorkspaceId}`, JSON.stringify(this.roomMeasurements));
+            }
+
+            // Propagate to all other items in the same room/section
+            this.rates.forEach(otherRate => {
+                if (otherRate.code === rate.code) return; // skip self
+                if (otherRate.section && otherRate.section.toLowerCase() === roomKey) {
+                    const mappedUnit = otherRate.unit;
+                    let calculatedQty = 0;
+                    if (mappedUnit === 'm2') {
+                        const descLower = (otherRate.desc || '').toLowerCase();
+                        if (descLower.includes('ceiling') || descLower.includes('floor')) {
+                            calculatedQty = width * length;
+                        } else {
+                            calculatedQty = (height > 0) ? (2 * (width + length) * height) : (width * length);
+                        }
+                    } else if (mappedUnit === 'm') {
+                        const descLower = (otherRate.desc || '').toLowerCase();
+                        if (descLower.includes('skirting') || descLower.includes('perimeter') || descLower.includes('cornice')) {
+                            calculatedQty = 2 * (width + length);
+                        } else {
+                            calculatedQty = width + length;
+                        }
+                    }
+
+                    if (calculatedQty > 0) {
+                        otherRate.qty = parseFloat(calculatedQty.toFixed(2));
+                        otherRate.current = (otherRate.materialRate || 0) + (otherRate.labourRate || 0) + (otherRate.plantRate || 0) + (otherRate.subRate || 0);
+                        this.saveRateToBackend(otherRate);
+                    }
+                }
+            });
+        }
         
         this.render(
             document.getElementById('pricing-search').value,
@@ -658,6 +728,16 @@ class PricingComponent {
             return;
         }
 
+        if (app.state.activeWorkspaceId) {
+            try {
+                this.roomMeasurements = JSON.parse(localStorage.getItem(`qs_pro_room_measurements_${app.state.activeWorkspaceId}`) || '{}');
+            } catch (e) {
+                this.roomMeasurements = {};
+            }
+        } else {
+            this.roomMeasurements = {};
+        }
+
         this.rates = estimates.map(est => {
             const unitRate = (est.materialRate || 0) + (est.labourRate || 0) + (est.plantRate || 0) + (est.subRate || 0);
             
@@ -670,6 +750,7 @@ class PricingComponent {
                 code: est.id,
                 backendId: est.id,
                 desc: est.description,
+                section: est.section || 'General',
                 category: category,
                 unit: est.unit || 'Item',
                 company: unitRate,
@@ -700,7 +781,7 @@ class PricingComponent {
                         subRate: rate.subRate || 0,
                         description: rate.desc,
                         unit: rate.unit,
-                        section: 'General'
+                        section: rate.section || 'General'
                     }
                 });
             } else {
@@ -708,7 +789,7 @@ class PricingComponent {
                     method: 'POST',
                     body: {
                         project_id: app.state.activeWorkspaceId,
-                        section: 'General',
+                        section: rate.section || 'General',
                         description: rate.desc,
                         quantity: rate.qty,
                         unit: rate.unit,
