@@ -16,7 +16,9 @@ class QSProApp {
             notifications: [],
             activeWorkspaceId: null,
             token: null,
-            user: null
+            user: null,
+            importPreview: null,
+            importPreviewFilter: ''
         };
 
         this.takeoff = null;
@@ -798,8 +800,6 @@ class QSProApp {
 
         this.renderFileList();
 
-        let count = 0;
-
         for (const fileObj of pendingFiles) {
             try {
                 const rawFile = fileObj.fileRef;
@@ -820,65 +820,225 @@ class QSProApp {
                     throw new Error(result?.error || 'Document analysis failed.');
                 }
 
-                const wsId = result.projectId;
-
-                fileObj.details = `Extracted ${result.itemsCount || 0} items. Running AI pricing engine...`;
+                fileObj.status = 'Analysed';
+                fileObj.details = `Extracted ${result.items?.length || 0} items. Ready to import.`;
                 this.renderFileList();
 
-                if (wsId) {
-                    await this.apiFetch(`/api/projects/${wsId}/reprice`, {
-                        method: 'POST',
-                        body: {
-                            forceLocal: false
-                        }
-                    });
-                }
+                // Store in state to preview
+                this.state.importPreview = {
+                    filename: result.filename || fileObj.name,
+                    items: result.items || []
+                };
 
-                fileObj.status = 'Analysed';
-                fileObj.details = `Calculated GIA, scale verified, and priced ${result.itemsCount || 0
-                    } items with AI.`;
+                // Show the preview modal
+                this.showImportPreview();
 
-                await this.loadInitialData();
-
-                if (wsId) {
-                    await this.loadWorkspace(wsId, false);
-                }
-
-                count++;
             } catch (err) {
                 console.error('Failed to analyse file:', err);
 
                 fileObj.status = 'Pending';
                 fileObj.details = `Error: ${err.message}`;
+                this.renderFileList();
             }
-
-            this.renderFileList();
         }
 
-        if (count > 0) {
+        if (btnProcess) btnProcess.disabled = false;
+    }
+
+    showImportPreview() {
+        if (!this.state.importPreview) return;
+        const modal = document.getElementById('import-preview-modal');
+        if (!modal) return;
+        
+        const fnEl = document.getElementById('import-preview-filename');
+        if (fnEl) fnEl.textContent = `Source File: ${this.state.importPreview.filename}`;
+        
+        const projNameInput = document.getElementById('import-project-name');
+        if (projNameInput) {
+            const baseName = this.state.importPreview.filename.replace(/\.[^/.]+$/, "");
+            projNameInput.value = `Tender for ${baseName}`;
+            projNameInput.style.borderColor = ''; // reset error style
+        }
+        
+        const searchInput = document.getElementById('import-preview-search');
+        if (searchInput) searchInput.value = '';
+        this.state.importPreviewFilter = '';
+
+        modal.style.display = 'flex';
+        this.renderImportPreviewTable();
+    }
+
+    renderImportPreviewTable() {
+        const tbody = document.getElementById('import-preview-table-body');
+        if (!tbody || !this.state.importPreview) return;
+        
+        const filterText = (this.state.importPreviewFilter || '').toLowerCase().trim();
+        const items = this.state.importPreview.items;
+        
+        tbody.innerHTML = '';
+        
+        items.forEach((item, idx) => {
+            const matchDesc = String(item.description || '').toLowerCase().includes(filterText);
+            const matchSection = String(item.section || '').toLowerCase().includes(filterText);
+            const matchCat = String(item.category || '').toLowerCase().includes(filterText);
+            
+            if (filterText && !matchDesc && !matchSection && !matchCat) {
+                return;
+            }
+            
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="text-align: center; padding: 10px;">
+                    <input type="checkbox" data-index="${idx}" ${item.selected ? 'checked' : ''} onchange="app.togglePreviewRow(${idx}, this.checked)">
+                </td>
+                <td style="padding: 10px; font-weight: 500; color: var(--text-primary);">${this.escapeHtml(item.section || 'General')}</td>
+                <td style="padding: 10px; color: var(--text-muted);">${this.escapeHtml(item.category || '-')}</td>
+                <td style="padding: 10px; color: var(--text-primary);">${this.escapeHtml(item.description || '')}</td>
+                <td style="text-align: center; padding: 10px;">
+                    <span class="badge ${item.status === 'Yes' ? 'badge-emerald' : 'badge-gray'}" style="font-size: 10px; padding: 2px 6px;">
+                        ${item.status || 'No'}
+                    </span>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        this.updatePreviewCount();
+    }
+
+    togglePreviewRow(index, checked) {
+        if (this.state.importPreview && this.state.importPreview.items[index]) {
+            this.state.importPreview.items[index].selected = checked;
+            this.updatePreviewCount();
+        }
+    }
+
+    setAllPreviewSelection(checked) {
+        if (!this.state.importPreview) return;
+        
+        const filterText = (this.state.importPreviewFilter || '').toLowerCase().trim();
+        
+        this.state.importPreview.items.forEach(item => {
+            const matchDesc = String(item.description || '').toLowerCase().includes(filterText);
+            const matchSection = String(item.section || '').toLowerCase().includes(filterText);
+            const matchCat = String(item.category || '').toLowerCase().includes(filterText);
+            
+            if (!filterText || matchDesc || matchSection || matchCat) {
+                item.selected = checked;
+            }
+        });
+        
+        this.renderImportPreviewTable();
+    }
+
+    filterPreviewItems() {
+        const input = document.getElementById('import-preview-search');
+        this.state.importPreviewFilter = input ? input.value : '';
+        this.renderImportPreviewTable();
+    }
+
+    updatePreviewCount() {
+        if (!this.state.importPreview) return;
+        const total = this.state.importPreview.items.length;
+        const selected = this.state.importPreview.items.filter(item => item.selected).length;
+        
+        const selEl = document.getElementById('import-preview-selected-count');
+        const totEl = document.getElementById('import-preview-total-count');
+        
+        if (selEl) selEl.textContent = selected;
+        if (totEl) totEl.textContent = total;
+
+        const btnConfirm = document.getElementById('btn-confirm-import');
+        if (btnConfirm) {
+            btnConfirm.disabled = (selected === 0);
+        }
+    }
+
+    closeImportPreview() {
+        const modal = document.getElementById('import-preview-modal');
+        if (modal) modal.style.display = 'none';
+        
+        const btnProcess = document.getElementById('btn-process-files');
+        if (btnProcess) btnProcess.disabled = false;
+    }
+
+    async confirmImport() {
+        const projNameInput = document.getElementById('import-project-name');
+        const projectName = projNameInput ? projNameInput.value.trim() : '';
+        
+        if (!projectName) {
+            if (projNameInput) {
+                projNameInput.style.borderColor = 'var(--color-red)';
+                projNameInput.focus();
+            }
+            return;
+        }
+        
+        if (!this.state.importPreview || !this.state.importPreview.items) {
+            return;
+        }
+        
+        const selectedItems = this.state.importPreview.items.filter(item => item.selected);
+        if (selectedItems.length === 0) {
+            return;
+        }
+        
+        const btnConfirm = document.getElementById('btn-confirm-import');
+        if (btnConfirm) {
+            btnConfirm.disabled = true;
+            btnConfirm.textContent = 'Importing...';
+        }
+        
+        try {
+            const importRes = await this.apiFetch('/api/projects/import', {
+                method: 'POST',
+                body: {
+                    projectName,
+                    items: selectedItems
+                }
+            });
+            
+            if (!importRes || !importRes.success || !importRes.projectId) {
+                throw new Error(importRes?.error || 'Import failed');
+            }
+            
+            const wsId = importRes.projectId;
+            
+            await this.apiFetch(`/api/projects/${wsId}/reprice`, {
+                method: 'POST',
+                body: {
+                    forceLocal: false
+                }
+            });
+            
+            await this.loadInitialData();
+            this.closeImportPreview();
+            
+            await this.loadWorkspace(wsId, false);
+            
             this.state.notifications.unshift({
                 id: `n-${Date.now()}`,
-                title: 'Analysis Completed',
-                body: `${count} tender document${count === 1 ? '' : 's'} successfully categorised, indexed and priced.`,
+                title: 'Import Completed',
+                body: `Imported and priced ${selectedItems.length} items for "${projectName}".`,
                 time: 'Just now',
                 read: false
             });
-
             this.renderNotifications();
             this.updateNotificationCount();
-
-            setTimeout(() => {
-                const goToTakeoff = confirm(
-                    'AI classification complete. Would you like to view the quantity take-off viewer for measurement validation?'
-                );
-
-                if (goToTakeoff) {
-                    this.switchPanel('takeoff');
-                }
-            }, 300);
+            
+        } catch (err) {
+            console.error('Error importing project:', err);
+            const fnEl = document.getElementById('import-preview-filename');
+            if (fnEl) {
+                fnEl.textContent = `Error: ${err.message}`;
+                fnEl.style.color = 'var(--color-red)';
+            }
+        } finally {
+            if (btnConfirm) {
+                btnConfirm.disabled = false;
+                btnConfirm.textContent = 'Confirm & Import';
+            }
         }
-
-        this.renderFileList();
     }
 
     async loadWorkspace(wsId, showAlert = true) {
@@ -893,7 +1053,7 @@ class QSProApp {
         this.state.targetContingency = workspace?.contingency || 3.0;
 
         if (workspace && showAlert) {
-            alert(`Switched to active workspace: ${workspace.name}`);
+            console.log(`Switched to active workspace: ${workspace.name}`);
         }
 
         try {
@@ -960,7 +1120,11 @@ class QSProApp {
         const notes = document.getElementById('new-proj-notes')?.value.trim() || '';
 
         if (!name) {
-            alert('Project Name is required.');
+            const input = document.getElementById('new-proj-name');
+            if (input) {
+                input.style.borderColor = 'var(--color-red)';
+                input.focus();
+            }
             return;
         }
 
@@ -981,16 +1145,17 @@ class QSProApp {
 
             this.closeNewProjectModal();
 
-            alert(`Tender project "${name}" created successfully.`);
-
             await this.loadInitialData();
 
             if (newProj?.id) {
-                await this.loadWorkspace(newProj.id);
+                await this.loadWorkspace(newProj.id, false);
             }
         } catch (err) {
             console.error('Error creating project:', err);
-            alert(`Failed to create project: ${err.message}`);
+            const input = document.getElementById('new-proj-name');
+            if (input) {
+                input.style.borderColor = 'var(--color-red)';
+            }
         }
     }
 
@@ -1011,8 +1176,6 @@ class QSProApp {
                 method: 'DELETE'
             });
 
-            alert('Project deleted successfully.');
-
             if (String(this.state.activeWorkspaceId) === String(wsId)) {
                 this.state.activeWorkspaceId = null;
             }
@@ -1027,7 +1190,6 @@ class QSProApp {
             }
         } catch (err) {
             console.error('Error deleting project:', err);
-            alert(`Failed to delete project: ${err.message}`);
         }
     }
 

@@ -1231,6 +1231,65 @@
         </div>
     </div>
 
+    <!-- Import Preview / Trial Run Modal -->
+    <div id="import-preview-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content card" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header border-b pb-3 mb-4">
+                <div>
+                    <h3 class="text-lg font-semibold text-primary" style="margin: 0;">Import Preview / Trial Run</h3>
+                    <p id="import-preview-filename" class="text-xs text-muted" style="margin: 2px 0 0 0;"></p>
+                </div>
+                <button class="modal-close" onclick="app.closeImportPreview()">&times;</button>
+            </div>
+            
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; min-height: 0; padding-right: 4px;">
+                <!-- Project Name input so they can rename it if needed -->
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <label class="text-xs text-secondary font-semibold">Tender Project Name</label>
+                    <input type="text" id="import-project-name" class="form-input text-sm" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.2);" placeholder="Project Name">
+                </div>
+                
+                <div style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 4px; flex-wrap: wrap;">
+                    <div style="position: relative; flex: 1; min-width: 200px;">
+                        <input type="text" id="import-preview-search" class="form-input text-xs" style="width: 100%; padding: 8px 12px 8px 30px; background: rgba(0,0,0,0.2);" placeholder="Filter preview items..." oninput="app.filterPreviewItems()">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 12px;">🔍</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.setAllPreviewSelection(true)">Select All</button>
+                        <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.setAllPreviewSelection(false)">Deselect All</button>
+                    </div>
+                </div>
+
+                <!-- Table Container -->
+                <div style="border: 1px solid var(--border-color); border-radius: 6px; overflow-y: auto; flex: 1; min-height: 150px; background: rgba(0,0,0,0.15);">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="position: sticky; top: 0; background: var(--bg-secondary); z-index: 10; box-shadow: inset 0 -1px 0 var(--border-color);">
+                            <tr>
+                                <th style="width: 60px; text-align: center; padding: 12px 10px;">Import</th>
+                                <th style="width: 150px; padding: 12px 10px;">Section / Room</th>
+                                <th style="width: 120px; padding: 12px 10px;">Category</th>
+                                <th style="padding: 12px 10px;">Item Description</th>
+                                <th style="width: 80px; text-align: center; padding: 12px 10px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="import-preview-table-body">
+                            <!-- Filled dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="text-xs text-secondary" style="display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
+                    <span>* Status represents the original status column in the spreadsheet. Unchecked items can still be imported by ticking them above.</span>
+                    <span>Selected <span id="import-preview-selected-count" class="text-primary">0</span> of <span id="import-preview-total-count">0</span> items</span>
+                </div>
+            </div>
+            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0;">
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="app.closeImportPreview()">Cancel</button>
+                <button id="btn-confirm-import" class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="app.confirmImport()">Confirm & Import</button>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript Files -->
     <script src="app.js"></script>
     <script src="components/takeoff.js"></script>

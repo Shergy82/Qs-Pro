@@ -83,6 +83,58 @@ async function generateContentWithRetry(params, retries = 8, delayMs = 2000) {
   }
 }
 
+function isInformationalOnly(descLower) {
+  const specIndicators = [
+    'all materials shall be',
+    'workmanship',
+    'in compliance with',
+    'found to be faulty',
+    'replaced like for like',
+    'shall be of approved',
+    'shall be used for making good',
+    'maker\'s instructions',
+    'manufacturer\'s instructions',
+    'manufacturers instructions',
+    'general workmanship',
+    'workmanship shall',
+    'specification of materials',
+    'for information only',
+    'putty to bs',
+    'bitumastic solution',
+    'shall be in accordance',
+    'to be in accordance with bs',
+    'standard standards',
+    'evidence of registration',
+    'ce marked in accordance',
+    'will be supplied by',
+    'materials shall be',
+    'is to be dulux',
+    'paint for internal',
+    'maker\'s name',
+    'makers name',
+    'sealed containers',
+    'pink primer',
+    'sadolin',
+    'bitumastic shall be',
+    'putty for woodwork'
+  ];
+
+  for (const indicator of specIndicators) {
+    if (descLower.includes(indicator)) {
+      return true;
+    }
+  }
+
+  if (descLower.includes('electrical works') && descLower.includes('in accordance')) {
+    return true;
+  }
+  if (descLower.includes('paint for internal') && descLower.includes('dulux')) {
+    return true;
+  }
+
+  return false;
+}
+
 function localHeuristicExcelParser(filePath) {
   console.log('[Local Parser] Running robust local heuristic fallback parser...');
   try {
@@ -105,7 +157,108 @@ function localHeuristicExcelParser(filePath) {
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
       
       let currentSection = sheetName || 'General';
-      
+
+      // Checklist / Scoping sheet detection
+      let statusColIdx = -1;
+      const colVotes = [];
+      for (let c = 0; c < 25; c++) colVotes[c] = { yes: 0, no: 0 };
+
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row || !Array.isArray(row)) continue;
+        row.forEach((cell, idx) => {
+          if (cell === null || cell === undefined || idx >= 25) return;
+          const str = String(cell).trim().toLowerCase();
+          if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[idx].yes++;
+          if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[idx].no++;
+        });
+      }
+
+      for (let idx = 0; idx < colVotes.length; idx++) {
+        if (colVotes[idx].yes + colVotes[idx].no >= 2) {
+          statusColIdx = idx;
+          break;
+        }
+      }
+
+      if (statusColIdx !== -1) {
+        let catColIdx = statusColIdx > 0 ? statusColIdx - 1 : -1;
+        let descColIdx = -1;
+        let maxLen = 0;
+        for (let c = statusColIdx + 1; c < 25; c++) {
+          let totalLen = 0;
+          let count = 0;
+          for (let r = 0; r < Math.min(rows.length, 100); r++) {
+            const row = rows[r];
+            if (row && row[c] !== undefined && row[c] !== null) {
+              totalLen += String(row[c]).length;
+              count++;
+            }
+          }
+          const avgLen = count > 0 ? totalLen / count : 0;
+          if (avgLen > maxLen) {
+            maxLen = avgLen;
+            descColIdx = c;
+          }
+        }
+        if (descColIdx === -1) {
+          descColIdx = statusColIdx + 1;
+        }
+
+        console.log(`[Local Parser] Checklist sheet detected: "${sheetName}". statusColIdx=${statusColIdx}, catColIdx=${catColIdx}, descColIdx=${descColIdx}`);
+
+        for (let r = 0; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+          // Section header detection when status is empty
+          if (!row[statusColIdx] || String(row[statusColIdx]).trim() === '') {
+            const cells = row.filter(c => c !== null && c !== undefined && String(c).trim().length > 3);
+            if (cells.length === 1) {
+              const potentialSection = String(cells[0]).trim();
+              if (potentialSection.toLowerCase() !== 'yes' && potentialSection.toLowerCase() !== 'no') {
+                currentSection = potentialSection;
+              }
+            }
+          }
+
+          // Capture left-column section name if present
+          if (row[0] && String(row[0]).trim().length > 3) {
+            const possibleSection = String(row[0]).trim();
+            if (possibleSection.toLowerCase() !== 'yes' && possibleSection.toLowerCase() !== 'no') {
+              currentSection = possibleSection;
+            }
+          }
+
+          const status = String(row[statusColIdx] || '').trim().toLowerCase();
+          if (status !== 'yes' && status !== 'y' && status !== 'true' && status !== '1') {
+            continue;
+          }
+
+          const cat = catColIdx !== -1 && row[catColIdx] ? String(row[catColIdx]).trim() : '';
+          const details = descColIdx !== -1 && row[descColIdx] ? String(row[descColIdx]).trim() : '';
+          if (!details && !cat) continue;
+
+          const combinedDesc = cat ? `${cat}: ${details}` : details;
+          
+          if (isInformationalOnly(combinedDesc.toLowerCase())) {
+            continue;
+          }
+
+          items.push({
+            section: currentSection,
+            description: combinedDesc,
+            quantity: 1,
+            unit: 'Item',
+            labourRate: 0,
+            materialRate: 0,
+            plantRate: 0,
+            subRate: 0
+          });
+        }
+        return; // Proceed to next sheet
+      }
+
       // Default column mapping indices
       let itemIdx = 0;
       let descIdx = 1;
@@ -155,11 +308,11 @@ function localHeuristicExcelParser(filePath) {
           continue;
         }
         
-        // Skip totals and collections
-        if (descLower.includes('total') || descLower.includes('collection') || descLower === 'downtakings' || descLower === 'electrical;') {
+        // Skip purely informational specification clauses
+        if (isInformationalOnly(descLower)) {
           continue;
         }
-        
+
         const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
         const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
         const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
@@ -167,8 +320,18 @@ function localHeuristicExcelParser(filePath) {
         const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
         
         if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
-          // Check if it's a sub-heading section
-          if (description.length < 50) {
+          // Check if it's a continuation of the previous item
+          const looksLikeContinuation = 
+            description.trim().startsWith('•') || 
+            description.trim().startsWith('-') ||
+            description.trim().startsWith('*') ||
+            /^[a-z]/.test(description.trim()) ||
+            (items.length > 0 && items[items.length - 1].description.trim().endsWith(':')) ||
+            description.length > 40;
+
+          if (looksLikeContinuation && items.length > 0 && items[items.length - 1].section === currentSection) {
+            items[items.length - 1].description += '\n' + description;
+          } else if (description.length < 50) {
             currentSection = description;
           }
           continue;
@@ -1652,6 +1815,75 @@ ${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quanti
   }
 });
 
+// --- Project Import API ---
+app.post('/api/projects/import', requireAuth, async (req, res) => {
+  const { projectName, items } = req.body;
+  if (!projectName || !Array.isArray(items)) {
+    return res.status(400).json({ error: 'projectName and items array are required.' });
+  }
+
+  try {
+    const db = await getDbConnection();
+    const projectId = crypto.randomUUID();
+    const date = new Date().toISOString().split('T')[0];
+
+    await db.run(
+      `INSERT INTO projects (
+        id, user_id, name, client, address, dateCreated, status, totalCost, sellPrice, margin,
+        tenderRef, tradeCategory, startDate, duration, notes,
+        wasteAllowance, contingency, labourUplift, plantOverhead
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId, req.user.id, projectName, 'AI Client', 'Unknown Site Address', date, 'Draft', 0, 0, req.user.margin || 20.0,
+        'T-AI-TAKEOFF', 'General', date, '4 weeks', 'Extracted via automated AI take-off.',
+        req.user.wasteAllowance || 10.0, req.user.contingency || 5.0, req.user.labourUplift || 0.0, req.user.plantOverhead || 5.0
+      ]
+    );
+
+    const insertItem = await db.prepare(
+      `INSERT INTO estimate_items (
+        id, project_id, section, description, quantity, unit, labourRate, materialRate,
+        plantRate, subRate, isAIIdentified, confidence, warnings, merchant, productUrl, assumptions, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    for (const item of items) {
+      const cat = item.category ? item.category.trim() : '';
+      const desc = item.description ? item.description.trim() : '';
+      let combined = desc;
+      if (cat) {
+        if (desc.startsWith(cat)) {
+          combined = desc;
+        } else {
+          combined = `${cat}: ${desc}`;
+        }
+      }
+
+      await insertItem.run(
+        crypto.randomUUID(), 
+        projectId, 
+        item.section || 'General', 
+        combined || 'Unknown Item', 
+        item.quantity || 1, 
+        item.unit || 'Item', 
+        0, 0, 0, 0, 1,
+        'Medium', '[]', '', '', 'Identified from uploaded document', ''
+      );
+    }
+    await insertItem.finalize();
+    
+    // Dynamic recalculation
+    await recalculateProjectCost(db, projectId);
+
+    await db.close();
+
+    res.json({ success: true, projectId, itemsCount: items.length });
+  } catch (error) {
+    console.error('Import error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- Document Analysis API ---
 app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req, res) => {
   if (!ai) return res.status(500).json({ error: 'Gemini API key is not configured.' });
@@ -1694,94 +1926,187 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
         let itemIdx = 0, descIdx = 1, unitIdx = 2, qtyIdx = 3, rateIdx = 4;
         let headerRowIdx = -1;
 
-        // Dynamic header search up to 15 rows
-        for (let r = 0; r < Math.min(rows.length, 15); r++) {
+        // Checklist / Scoping sheet detection
+        let statusColIdx = -1;
+        const colVotes = [];
+        for (let c = 0; c < 25; c++) colVotes[c] = { yes: 0, no: 0 };
+
+        for (let r = 0; r < rows.length; r++) {
           const row = rows[r];
           if (!row || !Array.isArray(row)) continue;
-          let foundDesc = false;
           row.forEach((cell, idx) => {
-            if (!cell) return;
-            const str = String(cell).toLowerCase().trim();
-            if (str === 'item' || str === 'ref' || str === 'code') itemIdx = idx;
-            if (str.includes('description') || str.includes('work') || str === 'details') {
-              descIdx = idx;
-              foundDesc = true;
-            }
-            if (str === 'unit') unitIdx = idx;
-            if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
-            if (str === 'rate' || str.includes('unit cost')) rateIdx = idx;
+            if (cell === null || cell === undefined || idx >= 25) return;
+            const str = String(cell).trim().toLowerCase();
+            if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[idx].yes++;
+            if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[idx].no++;
           });
-          if (foundDesc) {
-            headerRowIdx = r;
+        }
+
+        for (let idx = 0; idx < colVotes.length; idx++) {
+          if (colVotes[idx].yes + colVotes[idx].no >= 2) {
+            statusColIdx = idx;
             break;
           }
         }
 
-        const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
         let cleanedLines = [];
+        let currentSection = name || 'General';
 
-        if (headerRowIdx !== -1) {
-          cleanedLines.push(rows[headerRowIdx].join(','));
-        }
-
-        for (let r = startRowIdx; r < rows.length; r++) {
-          const row = rows[r];
-          if (!row || !Array.isArray(row) || row.length === 0) continue;
-
-          const descCell = row[descIdx];
-          if (!descCell) continue;
-          const description = String(descCell).trim();
-          if (description.length < 5) continue;
-
-          const descLower = description.toLowerCase();
-          // Skip header and totals lines
-          if (descLower.includes('description of works') || descLower.includes('description of work') || descLower.includes('item description')) {
-            continue;
+        if (statusColIdx !== -1) {
+          let catColIdx = statusColIdx > 0 ? statusColIdx - 1 : -1;
+          let descColIdx = -1;
+          let maxLen = 0;
+          for (let c = statusColIdx + 1; c < 25; c++) {
+            let totalLen = 0;
+            let count = 0;
+            for (let r = 0; r < Math.min(rows.length, 100); r++) {
+              const row = rows[r];
+              if (row && row[c] !== undefined && row[c] !== null) {
+                totalLen += String(row[c]).length;
+                count++;
+              }
+            }
+            const avgLen = count > 0 ? totalLen / count : 0;
+            if (avgLen > maxLen) {
+              maxLen = avgLen;
+              descColIdx = c;
+            }
           }
-          if (descLower.includes('total') || descLower.includes('collection') || descLower === 'downtakings' || descLower === 'electrical;') {
-            continue;
-          }
-
-          // Row quality check
-          const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
-          const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
-          const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
-          const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
-          const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
-
-          if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
-            continue;
+          if (descColIdx === -1) {
+            descColIdx = statusColIdx + 1;
           }
 
-          const itemCell = row[itemIdx];
-          const itemCode = itemCell ? String(itemCell).trim() : '';
-          if (!itemCode && description.length < 50 && !row[qtyIdx] && !row[unitIdx]) {
-            continue;
+          console.log(`[Excel Pre-filter] Checklist sheet detected: "${name}". statusColIdx=${statusColIdx}, catColIdx=${catColIdx}, descColIdx=${descColIdx}`);
+
+          for (let r = 0; r < rows.length; r++) {
+            const row = rows[r];
+            if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+            // Section header detection when status is empty
+            if (!row[statusColIdx] || String(row[statusColIdx]).trim() === '') {
+              const cells = row.filter(c => c !== null && c !== undefined && String(c).trim().length > 3);
+              if (cells.length === 1) {
+                const potentialSection = String(cells[0]).trim();
+                if (potentialSection.toLowerCase() !== 'yes' && potentialSection.toLowerCase() !== 'no') {
+                  currentSection = potentialSection;
+                }
+              }
+            }
+
+            // Capture left-column section name if present
+            if (row[0] && String(row[0]).trim().length > 3) {
+              const possibleSection = String(row[0]).trim();
+              if (possibleSection.toLowerCase() !== 'yes' && possibleSection.toLowerCase() !== 'no') {
+                currentSection = possibleSection;
+              }
+            }
+
+            const status = String(row[statusColIdx] || '').trim().toLowerCase();
+            const isSelected = (status === 'yes' || status === 'y' || status === 'true' || status === '1');
+
+            const cat = catColIdx !== -1 && row[catColIdx] ? String(row[catColIdx]).trim() : '';
+            const details = descColIdx !== -1 && row[descColIdx] ? String(row[descColIdx]).trim() : '';
+            if (!details && !cat) continue;
+
+            extractedItems.push({
+              section: currentSection,
+              category: cat,
+              description: details,
+              status: isSelected ? 'Yes' : 'No',
+              selected: isSelected,
+              quantity: 1,
+              unit: 'Item'
+            });
+          }
+        } else {
+          // Dynamic header search up to 15 rows
+          for (let r = 0; r < Math.min(rows.length, 15); r++) {
+            const row = rows[r];
+            if (!row || !Array.isArray(row)) continue;
+            let foundDesc = false;
+            row.forEach((cell, idx) => {
+              if (!cell) return;
+              const str = String(cell).toLowerCase().trim();
+              if (str === 'item' || str === 'ref' || str === 'code') itemIdx = idx;
+              if (str.includes('description') || str.includes('work') || str === 'details') {
+                descIdx = idx;
+                foundDesc = true;
+              }
+              if (str === 'unit') unitIdx = idx;
+              if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
+              if (str === 'rate' || str.includes('unit cost')) rateIdx = idx;
+            });
+            if (foundDesc) {
+              headerRowIdx = r;
+              break;
+            }
           }
 
-          cleanedLines.push(row.map(cell => cell === null || cell === undefined ? '' : String(cell).replace(/,/g, ' ')).join(','));
-        }
+          const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+          if (headerRowIdx !== -1) {
+            cleanedLines.push(rows[headerRowIdx].join(','));
+          }
 
-        // Safety cap to prevent blowing up the free-tier token quota on massive sheets
-        if (cleanedLines.length > 250) {
-          console.warn(`Sheet "${name}" contains ${cleanedLines.length} rows. Truncating to 250 rows for token safety.`);
-          cleanedLines = cleanedLines.slice(0, 250);
-        }
+          for (let r = startRowIdx; r < rows.length; r++) {
+            const row = rows[r];
+            if (!row || !Array.isArray(row) || row.length === 0) continue;
 
-        cleanedTotalRows += cleanedLines.length;
+            const descCell = row[descIdx];
+            if (!descCell) continue;
+            const description = String(descCell).trim();
+            if (description.length < 5) continue;
 
-        if (cleanedLines.length > 0) {
-          excelText += `### Sheet: ${name}\n${cleanedLines.join('\n')}\n\n`;
+            const descLower = description.toLowerCase();
+            // Skip header and totals lines
+            if (descLower.includes('description of works') || descLower.includes('description of work') || descLower.includes('item description')) {
+              continue;
+            }
+            if (descLower.includes('total') || descLower.includes('collection') || descLower === 'downtakings' || descLower === 'electrical;') {
+              continue;
+            }
+
+            // Row quality check
+            const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
+            const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
+            const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
+            const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
+            const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
+
+            if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
+              continue;
+            }
+
+            const itemCell = row[itemIdx];
+            const itemCode = itemCell ? String(itemCell).trim() : '';
+            if (!itemCode && description.length < 50 && !row[qtyIdx] && !row[unitIdx]) {
+              continue;
+            }
+
+            cleanedLines.push(row.map(cell => cell === null || cell === undefined ? '' : String(cell).replace(/,/g, ' ').replace(/\r?\n/g, '; ')).join(','));
+          }
+
+          // Safety cap to prevent blowing up the free-tier token quota on massive sheets
+          if (cleanedLines.length > 1000) {
+            console.warn(`Sheet "${name}" contains ${cleanedLines.length} rows. Truncating to 1000 rows for token safety.`);
+            cleanedLines = cleanedLines.slice(0, 1000);
+          }
+
+          cleanedTotalRows += cleanedLines.length;
+
+          if (cleanedLines.length > 0) {
+            excelText += `### Sheet: ${name}\n${cleanedLines.join('\n')}\n\n`;
+          }
         }
       });
 
       console.log(`Excel pre-filtered. Original rows: ${originalTotalRows}, Cleaned rows (with data): ${cleanedTotalRows}, String size: ${excelText.length} characters.`);
-      console.log('Sending pre-filtered Excel contents to Gemini...');
-      try {
-        const response = await generateContentWithRetry({
-          model: 'gemini-2.5-flash',
-          contents: [
-            `You are an expert UK Quantity Surveyor. Analyze this uploaded construction spreadsheet data.
+      if (excelText.trim().length > 0) {
+        console.log('Sending pre-filtered Excel contents to Gemini...');
+        try {
+          const response = await generateContentWithRetry({
+            model: 'gemini-2.5-flash',
+            contents: [
+              `You are an expert UK Quantity Surveyor. Analyze this uploaded construction spreadsheet data.
 Extract all distinct priced work items, quantities, and units. Do not hallucinate prices.
 Map each item into our exact JSON array structure.
 You must return a valid JSON array of objects. Do not wrap it in markdown block quotes (no \`\`\`json). Just the raw JSON array.
@@ -1797,25 +2122,51 @@ Structure for each object:
   "section": "String (e.g. Substructure, Joinery)",
   "description": "String (Clear description of work)",
   "quantity": Number,
-  "unit": "String (m, m2, m3, Item, Nr)",
-  "labourRate": 0,
-  "materialRate": 0,
-  "plantRate": 0,
-  "subRate": 0
+  "unit": "String (m, m2, m3, Item, Nr)"
 }
 
 SPREADSHEET DATA:
 ${excelText}`
-          ],
-          config: {
-            responseMimeType: 'application/json',
-          }
-        }, 2, 1000); // 2 attempts max, 1s delay
-        extractedItems = JSON.parse(response.text);
-        fs.unlinkSync(req.file.path);
-      } catch (geminiError) {
-        console.warn('[Analyze Document] Gemini API spreadsheet parsing failed or was rate-limited. Falling back to local heuristic Excel parser...', geminiError);
-        extractedItems = localHeuristicExcelParser(req.file.path);
+            ],
+            config: {
+              responseMimeType: 'application/json',
+            }
+          }, 2, 1000);
+          const geminiItems = JSON.parse(response.text);
+          geminiItems.forEach(item => {
+            extractedItems.push({
+              section: item.section || 'General',
+              category: '',
+              description: item.description || '',
+              quantity: item.quantity || 1,
+              unit: item.unit || 'Item',
+              status: 'Yes',
+              selected: true
+            });
+          });
+          fs.unlinkSync(req.file.path);
+        } catch (geminiError) {
+          console.warn('[Analyze Document] Gemini API spreadsheet parsing failed. Falling back to local standard parser...', geminiError);
+          const fallbackItems = localHeuristicExcelParser(req.file.path);
+          fallbackItems.forEach(item => {
+            // Only add if not already in extractedItems to avoid double parsing checklist sheets
+            const isAlreadyAdded = extractedItems.some(i => i.section === item.section && i.description === item.description);
+            if (!isAlreadyAdded) {
+              extractedItems.push({
+                section: item.section || 'General',
+                category: '',
+                description: item.description || '',
+                quantity: item.quantity || 1,
+                unit: item.unit || 'Item',
+                status: 'Yes',
+                selected: true
+              });
+            }
+          });
+          try { fs.unlinkSync(req.file.path); } catch (e) {}
+        }
+      } else {
+        // All sheets were checklists and parsed locally! Just delete the uploaded file
         try { fs.unlinkSync(req.file.path); } catch (e) {}
       }
 
@@ -1832,21 +2183,25 @@ ${excelText}`
 
         console.log(`File uploaded. URI: ${uploadResult.uri}. Analyzing...`);
         
-        const prompt = `You are an expert UK Quantity Surveyor. Analyze this construction document (schedule of works, spec, or drawing).
-Extract all distinct work items, quantities, and units. Do not hallucinate prices.
+        const prompt = `You are an expert UK Quantity Surveyor. Analyze this construction document (schedule of works, specification, or priced Bill of Quantities).
+Extract all distinct priced work items, quantities, and units. Do not hallucinate prices.
 Map each item into our exact JSON array structure.
 You must return a valid JSON array of objects. Do not wrap it in markdown block quotes (no \`\`\`json). Just the raw JSON array.
+
+Strict Extraction Rules:
+1. You MUST extract all room-by-room items, including all items in the "General Items" or "Removal" area at the end of the rooms list (e.g. "Remove and dispose pallets at the bottom of the garden"). Do not truncate or stop early.
+2. You MUST extract all physical work items from the Schedule of Rates (SOR) / priced Bill of Quantities (BOQ) section at the end of the document (items 49 to 82).
+3. Do NOT extract purely informational specification clauses (e.g., standard guidelines like "All materials shall be of approved manufacture", "Paint for external use shall be oil based", "All primers undercoats and gloss paints will be supplied by same manufacturer").
+4. However, you MUST extract any item in the SOR/BOQ section that represents an actual physical task, work item, or repair to be done (e.g., "Any asbestos guttering...", "General Workmanship (External Repairs)", "Painting", "Touch up and Make Good", "Inspect Gutters and Downpipes", "Cracked or Broken Glass Putty", "Painting and Preparation of Surfaces", "Roof Overhauls", "Floorcoverings - all carpets...", "Linoleum - all linoleum...", "All failed double glazing units...", "Taps and other bathroom fittings...", "Door furniture...", "Cookers found to be faulty...", "Curtain rails...", "Gas/Oil/Solid Fuel Remedials*", "Gas safety and service...").
+5. In the SOR/BOQ section, do NOT extract items that have a rate, price, or cost of 0 or 0.00 in the document (like items 49-54, 65-67, and 79). Only extract actual work tasks with non-zero pricing/rates (e.g. items 55, 57, 59-62, 64, 68-72, 74, 75, 77, 78, 81, 82).
+6. For each item, specify the section (use the room name or sheet name, e.g. "Entrance Hall", "Kitchen", "External Works / SOR", "Internal Works / SOR"), the description, the quantity, and the unit.
 
 Structure for each object:
 {
   "section": "String (e.g. Substructure, Joinery)",
   "description": "String (Clear description of work)",
   "quantity": Number,
-  "unit": "String (m, m2, m3, Item, Nr)",
-  "labourRate": 0,
-  "materialRate": 0,
-  "plantRate": 0,
-  "subRate": 0
+  "unit": "String (m, m2, m3, Item, Nr)"
 }`;
 
         const response = await generateContentWithRetry({
@@ -1861,7 +2216,16 @@ Structure for each object:
         }, 2, 1000); // 2 attempts max, 1s delay -> fail fast instantly
 
         try { await ai.files.delete({ name: uploadResult.name }); } catch(e) {}
-        extractedItems = JSON.parse(response.text);
+        const rawItems = JSON.parse(response.text);
+        extractedItems = rawItems.map(item => ({
+          section: item.section || 'General',
+          category: '',
+          description: item.description || '',
+          quantity: item.quantity || 1,
+          unit: item.unit || 'Item',
+          status: 'Yes',
+          selected: true
+        }));
         fs.unlinkSync(req.file.path);
       } catch (geminiError) {
         try { fs.unlinkSync(req.file.path); } catch (e) {}
@@ -1869,50 +2233,7 @@ Structure for each object:
       }
     }
 
-    const db = await getDbConnection();
-    const projectId = crypto.randomUUID();
-    const projectName = req.file.originalname.replace(/\.[^/.]+$/, "") + ' - AI Take-off';
-    const date = new Date().toISOString().split('T')[0];
-    
-    await db.run(
-      `INSERT INTO projects (
-        id, user_id, name, client, address, dateCreated, status, totalCost, sellPrice, margin,
-        tenderRef, tradeCategory, startDate, duration, notes,
-        wasteAllowance, contingency, labourUplift, plantOverhead
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        projectId, req.user.id, projectName, 'AI Client', 'Unknown Site Address', date, 'Draft', 0, 0, req.user.margin || 20.0,
-        'T-AI-TAKEOFF', 'General', date, '4 weeks', 'Extracted via automated AI take-off.',
-        req.user.wasteAllowance || 10.0, req.user.contingency || 5.0, req.user.labourUplift || 0.0, req.user.plantOverhead || 5.0
-      ]
-    );
-
-    const insertItem = await db.prepare(
-      `INSERT INTO estimate_items (
-        id, project_id, section, description, quantity, unit, labourRate, materialRate,
-        plantRate, subRate, isAIIdentified, confidence, warnings, merchant, productUrl, assumptions, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    for (const item of extractedItems) {
-      await insertItem.run(
-        crypto.randomUUID(), 
-        projectId, 
-        item.section || 'General', 
-        item.description || 'Unknown Item', 
-        item.quantity || 1, 
-        item.unit || 'Item', 
-        0, 0, 0, 0, 1,
-        'Medium', '[]', '', '', 'Identified from uploaded document', ''
-      );
-    }
-    await insertItem.finalize();
-    
-    // Dynamic recalculation
-    await recalculateProjectCost(db, projectId);
-
-    await db.close();
-
-    res.json({ success: true, projectId, itemsCount: extractedItems.length });
+    res.json({ success: true, filename: req.file.originalname, items: extractedItems });
 
   } catch (error) {
     console.error('Analyze error:', error);
