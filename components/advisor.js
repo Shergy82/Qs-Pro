@@ -85,6 +85,9 @@ class AdvisorComponent {
                     contingency: app.state.targetContingency
                 }
             });
+            if (window.app && typeof window.app.triggerBackupActiveProject === 'function') {
+                window.app.triggerBackupActiveProject();
+            }
         } catch (err) {
             console.error('Error saving project parameters:', err);
         }
@@ -133,6 +136,8 @@ class AdvisorComponent {
         if (activeWs) {
             activeWs.baseCost = baseCost;
             activeWs.value = Math.round(finalBid);
+            activeWs.margin = app.state.targetMargin;
+            activeWs.contingency = app.state.targetContingency;
         }
 
         // Refresh global displays

@@ -2,14 +2,23 @@ const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 
 const dbPath = process.env.DB_PATH || path.resolve(__dirname, 'qs.db');
 
+// Ensure parent directory of database exists
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+
 async function getDbConnection() {
-  return open({
+  const db = await open({
     filename: dbPath,
     driver: sqlite3.Database
   });
+  await db.run("PRAGMA foreign_keys = ON");
+  return db;
 }
 
 function hashPassword(password, salt) {
@@ -86,6 +95,7 @@ async function initDb() {
       DROP TABLE IF EXISTS rates;
       DROP TABLE IF EXISTS labour_rates;
       DROP TABLE IF EXISTS sessions;
+      DROP TABLE IF EXISTS room_measurements;
     `);
   }
 
@@ -181,6 +191,16 @@ async function initDb() {
       difficultyFactor REAL,
       PRIMARY KEY (trade, user_id),
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS room_measurements (
+      project_id TEXT,
+      room TEXT,
+      width REAL,
+      length REAL,
+      height REAL,
+      PRIMARY KEY (project_id, room),
+      FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
   `);
 

@@ -1083,7 +1083,7 @@ app.post('/api/projects/sync', requireAuth, async (req, res) => {
   const {
     id, name, client, address, dateCreated, status, totalCost, sellPrice, margin,
     tenderRef, tradeCategory, startDate, duration, notes,
-    wasteAllowance, contingency, labourUplift, plantOverhead, items
+    wasteAllowance, contingency, labourUplift, plantOverhead, items, roomMeasurements
   } = req.body;
 
   if (!id || !name || !Array.isArray(items)) {
@@ -1093,9 +1093,10 @@ app.post('/api/projects/sync', requireAuth, async (req, res) => {
   try {
     const db = await getDbConnection();
 
-    // 1. Delete existing project if any (to update it completely)
+    // 1. Delete existing project and related tables if any (to update completely)
     await db.run('DELETE FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
     await db.run('DELETE FROM estimate_items WHERE project_id = ?', [id]);
+    await db.run('DELETE FROM room_measurements WHERE project_id = ?', [id]);
 
     // 2. Insert project details
     await db.run(
@@ -1134,7 +1135,7 @@ app.post('/api/projects/sync', requireAuth, async (req, res) => {
         item.subRate || 0,
         item.isAIIdentified !== undefined ? item.isAIIdentified : 1,
         item.confidence || 'Medium',
-        item.warnings || '[]',
+        Array.isArray(item.warnings) ? JSON.stringify(item.warnings) : (item.warnings || '[]'),
         item.merchant || '',
         item.productUrl || '',
         item.assumptions || '',
@@ -1142,6 +1143,19 @@ app.post('/api/projects/sync', requireAuth, async (req, res) => {
       );
     }
     await insertItem.finalize();
+
+    // 3b. Insert room measurements
+    if (roomMeasurements && typeof roomMeasurements === 'object') {
+      const insertRoom = await db.prepare(
+        `INSERT INTO room_measurements (project_id, room, width, length, height) VALUES (?, ?, ?, ?, ?)`
+      );
+      for (const [roomName, dims] of Object.entries(roomMeasurements)) {
+        if (dims && typeof dims === 'object') {
+          await insertRoom.run(id, roomName.toLowerCase().trim(), dims.width || 0, dims.length || 0, dims.height || 0);
+        }
+      }
+      await insertRoom.finalize();
+    }
 
     // 4. Recalculate
     await recalculateProjectCost(db, id);
@@ -1206,6 +1220,53 @@ app.delete('/api/projects/:id', requireAuth, async (req, res) => {
 
     await db.run('DELETE FROM estimate_items WHERE project_id=?', id);
     await db.run('DELETE FROM projects WHERE id=? AND user_id=?', [id, req.user.id]);
+    await db.close();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Room Measurements API ---
+app.get('/api/projects/:id/room-measurements', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const db = await getDbConnection();
+    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!project) {
+      await db.close();
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    const measurements = await db.all('SELECT room, width, length, height FROM room_measurements WHERE project_id = ?', id);
+    await db.close();
+    res.json(measurements);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/projects/:id/room-measurements', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { room, width, length, height } = req.body;
+  if (!room) {
+    return res.status(400).json({ error: 'Room name is required.' });
+  }
+  try {
+    const db = await getDbConnection();
+    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
+    if (!project) {
+      await db.close();
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    await db.run(
+      `INSERT INTO room_measurements (project_id, room, width, length, height)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(project_id, room) DO UPDATE SET
+         width = excluded.width,
+         length = excluded.length,
+         height = excluded.height`,
+      [id, room.toLowerCase().trim(), width || 0, length || 0, height || 0]
+    );
     await db.close();
     res.json({ success: true });
   } catch (error) {

@@ -401,22 +401,36 @@ class PricingComponent {
 
             if (app.state.activeWorkspaceId) {
                 localStorage.setItem(`qs_pro_room_measurements_${app.state.activeWorkspaceId}`, JSON.stringify(this.roomMeasurements));
+                
+                // Write room measurements to database!
+                app.apiFetch(`/api/projects/${app.state.activeWorkspaceId}/room-measurements`, {
+                    method: 'POST',
+                    body: {
+                        room: rate.section,
+                        width: width,
+                        length: length,
+                        height: height
+                    }
+                }).catch(err => console.error('Failed to save room measurements to backend:', err));
             }
 
             // Propagate to all other items in the same room/section
             this.rates.forEach(otherRate => {
                 if (otherRate.code === rate.code) return; // skip self
                 if (otherRate.section && otherRate.section.toLowerCase() === roomKey) {
-                    const mappedUnit = otherRate.unit;
+                    const unitLower = (otherRate.unit || '').toLowerCase().trim();
+                    const isM2 = unitLower === 'm2' || unitLower === 'sqm' || unitLower === 'm²' || unitLower === 'sq.m';
+                    const isM = unitLower === 'm' || unitLower === 'lm' || unitLower === 'linear' || unitLower === 'linear meter' || unitLower === 'l.m';
+                    
                     let calculatedQty = 0;
-                    if (mappedUnit === 'm2') {
+                    if (isM2) {
                         const descLower = (otherRate.desc || '').toLowerCase();
                         if (descLower.includes('ceiling') || descLower.includes('floor')) {
                             calculatedQty = width * length;
                         } else {
                             calculatedQty = (height > 0) ? (2 * (width + length) * height) : (width * length);
                         }
-                    } else if (mappedUnit === 'm') {
+                    } else if (isM) {
                         const descLower = (otherRate.desc || '').toLowerCase();
                         if (descLower.includes('skirting') || descLower.includes('perimeter') || descLower.includes('cornice')) {
                             calculatedQty = 2 * (width + length);
@@ -721,14 +735,16 @@ class PricingComponent {
         }
     }
 
-    syncRatesFromEstimates(estimates) {
+    syncRatesFromEstimates(estimates, roomMeas) {
         if (!estimates || estimates.length === 0) {
             this.rates.forEach(r => r.qty = 0);
             this.render();
             return;
         }
 
-        if (app.state.activeWorkspaceId) {
+        if (roomMeas) {
+            this.roomMeasurements = roomMeas;
+        } else if (app.state.activeWorkspaceId) {
             try {
                 this.roomMeasurements = JSON.parse(localStorage.getItem(`qs_pro_room_measurements_${app.state.activeWorkspaceId}`) || '{}');
             } catch (e) {
@@ -800,6 +816,10 @@ class PricingComponent {
                     }
                 });
                 rate.backendId = newItem.id;
+            }
+
+            if (window.app && typeof window.app.triggerBackupActiveProject === 'function') {
+                window.app.triggerBackupActiveProject();
             }
         } catch (err) {
             console.error('Error saving rate to backend:', err);

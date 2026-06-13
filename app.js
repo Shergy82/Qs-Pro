@@ -238,10 +238,33 @@ class QSProApp {
                 `/api/projects/${this.state.activeWorkspaceId}/estimates`
             );
 
+            // Fetch room measurements from backend
+            let roomMeas = {};
+            try {
+                const measurements = await this.apiFetch(`/api/projects/${this.state.activeWorkspaceId}/room-measurements`);
+                if (Array.isArray(measurements)) {
+                    measurements.forEach(m => {
+                        roomMeas[m.room.toLowerCase()] = {
+                            width: m.width,
+                            length: m.length,
+                            height: m.height
+                        };
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load room measurements from database:', err);
+                try {
+                    roomMeas = JSON.parse(localStorage.getItem(`qs_pro_room_measurements_${this.state.activeWorkspaceId}`) || '{}');
+                } catch (e) {}
+            }
+
+            // Save to LocalStorage
+            localStorage.setItem(`qs_pro_room_measurements_${this.state.activeWorkspaceId}`, JSON.stringify(roomMeas));
+
             this.backupActiveProject(estimates);
 
             if (this.pricing && typeof this.pricing.syncRatesFromEstimates === 'function') {
-                this.pricing.syncRatesFromEstimates(estimates || []);
+                this.pricing.syncRatesFromEstimates(estimates || [], roomMeas);
             }
 
             if (this.advisor) {
@@ -269,6 +292,13 @@ class QSProApp {
 
         try {
             const backups = JSON.parse(localStorage.getItem('qs_pro_tenders_backup') || '{}');
+
+            // Get room measurements for backup
+            let roomMeas = {};
+            try {
+                roomMeas = JSON.parse(localStorage.getItem(`qs_pro_room_measurements_${this.state.activeWorkspaceId}`) || '{}');
+            } catch (e) {}
+
             backups[this.state.activeWorkspaceId] = {
                 id: workspace.id,
                 name: workspace.name,
@@ -288,12 +318,40 @@ class QSProApp {
                 wasteAllowance: workspace.wasteAllowance || 10.0,
                 labourUplift: workspace.labourUplift || 0.0,
                 plantOverhead: workspace.plantOverhead || 5.0,
-                items: estimates || []
+                items: estimates || [],
+                roomMeasurements: roomMeas
             };
             localStorage.setItem('qs_pro_tenders_backup', JSON.stringify(backups));
         } catch (e) {
             console.error('Failed to backup active project:', e);
         }
+    }
+
+    triggerBackupActiveProject() {
+        if (!this.state.activeWorkspaceId || !this.pricing) return;
+
+        // Map pricing.rates back to estimate items schema format
+        const estimates = this.pricing.rates.map(r => ({
+            id: r.backendId || r.code,
+            project_id: this.state.activeWorkspaceId,
+            section: r.section || 'General',
+            description: r.desc,
+            quantity: r.qty || 0,
+            unit: r.unit || 'Item',
+            materialRate: r.materialRate || 0,
+            labourRate: r.labourRate || 0,
+            plantRate: r.plantRate || 0,
+            subRate: r.subRate || 0,
+            isAIIdentified: true,
+            confidence: 'High',
+            warnings: [],
+            merchant: '',
+            productUrl: '',
+            assumptions: '',
+            notes: ''
+        }));
+
+        this.backupActiveProject(estimates);
     }
 
     setupEventListeners() {
@@ -1237,6 +1295,15 @@ class QSProApp {
         if (!confirmed) return;
 
         try {
+            // Delete from LocalStorage backup
+            try {
+                const backups = JSON.parse(localStorage.getItem('qs_pro_tenders_backup') || '{}');
+                delete backups[wsId];
+                localStorage.setItem('qs_pro_tenders_backup', JSON.stringify(backups));
+            } catch (e) {
+                console.error('Failed to delete project from backup:', e);
+            }
+
             await this.apiFetch(`/api/projects/${wsId}`, {
                 method: 'DELETE'
             });
