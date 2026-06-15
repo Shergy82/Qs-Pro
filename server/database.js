@@ -154,6 +154,10 @@ async function initDb() {
       trade TEXT,
       unit TEXT,
       costRate REAL,
+      materialRate REAL DEFAULT 0.0,
+      labourRate REAL DEFAULT 0.0,
+      plantRate REAL DEFAULT 0.0,
+      subRate REAL DEFAULT 0.0,
       category TEXT,
       supplier TEXT,
       sourceUrl TEXT,
@@ -203,6 +207,25 @@ async function initDb() {
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
   `);
+
+  // Migration to add breakdown rates to rates table
+  const tableInfo = await db.all("PRAGMA table_info(rates)");
+  const hasMaterialRate = tableInfo.some(col => col.name === 'materialRate');
+  if (!hasMaterialRate) {
+    console.log('Migrating rates table to add breakdown rates...');
+    try {
+      await db.exec(`
+        ALTER TABLE rates ADD COLUMN materialRate REAL DEFAULT 0.0;
+        ALTER TABLE rates ADD COLUMN labourRate REAL DEFAULT 0.0;
+        ALTER TABLE rates ADD COLUMN plantRate REAL DEFAULT 0.0;
+        ALTER TABLE rates ADD COLUMN subRate REAL DEFAULT 0.0;
+      `);
+      console.log('Migration successful: added breakdown rate columns to rates table.');
+    } catch (err) {
+      console.error('Migration failed or columns already exist:', err);
+    }
+  }
+
 
   // Check if we need to seed the default demo user and data
   const demoUser = await db.get("SELECT * FROM users WHERE email = 'demo@truecostqs.com'");

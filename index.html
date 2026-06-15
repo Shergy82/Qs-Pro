@@ -922,22 +922,26 @@
                             </div>
                         </div>
 
-                        <h4 class="text-xs text-secondary uppercase font-bold tracking-wider mb-3">Cost Breakdown</h4>
-                        <div style="margin-bottom: 12px;">
-                            <label class="text-xs text-secondary block mb-1">Material Rate (£)</label>
-                            <input type="number" id="rate-material" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                        <h4 class="text-xs text-secondary uppercase font-bold tracking-wider mb-2">Cost Breakdown</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                            <div>
+                                <label class="text-xs text-secondary block mb-1">Material Rate (£)</label>
+                                <input type="number" id="rate-material" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                            </div>
+                            <div>
+                                <label class="text-xs text-secondary block mb-1">Labour Rate (£)</label>
+                                <input type="number" id="rate-labour" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                            </div>
                         </div>
-                        <div style="margin-bottom: 12px;">
-                            <label class="text-xs text-secondary block mb-1">Labour Rate (£)</label>
-                            <input type="number" id="rate-labour" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
-                        </div>
-                        <div style="margin-bottom: 12px;">
-                            <label class="text-xs text-secondary block mb-1">Plant Rate (£)</label>
-                            <input type="number" id="rate-plant" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
-                        </div>
-                        <div style="margin-bottom: 12px;">
-                            <label class="text-xs text-secondary block mb-1">Subcontractor Rate (£)</label>
-                            <input type="number" id="rate-sub" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                            <div>
+                                <label class="text-xs text-secondary block mb-1">Plant Rate (£)</label>
+                                <input type="number" id="rate-plant" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                            </div>
+                            <div>
+                                <label class="text-xs text-secondary block mb-1">Subcontractor Rate (£)</label>
+                                <input type="number" id="rate-sub" class="form-input text-xs" style="padding: 6px 10px;" step="any" oninput="pricingComponent.calcModalTotal()">
+                            </div>
                         </div>
                         
                         <div class="border-t pt-3 mt-3">
@@ -1233,7 +1237,7 @@
 
     <!-- Import Preview / Trial Run Modal -->
     <div id="import-preview-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content card" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+        <div class="modal-content card" style="max-width: 1200px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
             <div class="modal-header border-b pb-3 mb-4">
                 <div>
                     <h3 class="text-lg font-semibold text-primary" style="margin: 0;">Import Preview / Trial Run</h3>
@@ -1242,51 +1246,103 @@
                 <button class="modal-close" onclick="app.closeImportPreview()">&times;</button>
             </div>
             
-            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex: 1; min-height: 0; padding-right: 4px;">
-                <!-- Project Name input so they can rename it if needed -->
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label class="text-xs text-secondary font-semibold">Tender Project Name</label>
-                    <input type="text" id="import-project-name" class="form-input text-sm" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.2);" placeholder="Project Name">
-                </div>
+            <div class="modal-body" style="overflow: hidden; flex: 1; min-height: 0; padding-right: 4px; display: flex; flex-direction: column;">
                 
-                <div style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 4px; flex-wrap: wrap;">
-                    <div style="position: relative; flex: 1; min-width: 200px;">
-                        <input type="text" id="import-preview-search" class="form-input text-xs" style="width: 100%; padding: 8px 12px 8px 30px; background: rgba(0,0,0,0.2);" placeholder="Filter preview items..." oninput="app.filterPreviewItems()">
-                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 12px;">🔍</span>
+                <!-- STEP 1: Select Rooms / Sections to Import -->
+                <div id="import-wizard-step-1" style="display: flex; flex-direction: column; gap: 14px; flex: 1; overflow: hidden;">
+                    <div style="flex-shrink: 0; margin-bottom: 6px;">
+                        <h4 class="text-sm font-semibold text-primary" style="margin: 0 0 4px 0; font-family: var(--font-heading);">Step 1: Choose Rooms / Sections to Import</h4>
+                        <p class="text-xs text-secondary" style="margin: 0;">Select which rooms or sections from the scope you wish to price. Deselect any areas you do not need.</p>
                     </div>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.setAllPreviewSelection('yes')">Select 'Yes' Items</button>
-                        <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.setAllPreviewSelection(true)">Select All</button>
-                        <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.setAllPreviewSelection(false)">Deselect All</button>
+                    
+                    <div style="display: flex; gap: 8px; margin-bottom: 6px; flex-shrink: 0;">
+                        <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.selectAllImportRooms(true)">Select All</button>
+                        <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.selectAllImportRooms(false)">Deselect All</button>
+                    </div>
+                    
+                    <div id="import-rooms-selection-grid" style="border: 1px solid var(--border-color); border-radius: 6px; overflow-y: auto; flex: 1; padding: 16px; background: rgba(0,0,0,0.15); display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; align-content: start;">
+                        <!-- Filled dynamically -->
                     </div>
                 </div>
 
-                <!-- Table Container -->
-                <div style="border: 1px solid var(--border-color); border-radius: 6px; overflow-y: auto; flex: 1; min-height: 150px; background: rgba(0,0,0,0.15);">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead style="position: sticky; top: 0; background: var(--bg-secondary); z-index: 10; box-shadow: inset 0 -1px 0 var(--border-color);">
-                            <tr>
-                                <th style="width: 60px; text-align: center; padding: 12px 10px;">Import</th>
-                                <th style="width: 150px; padding: 12px 10px;">Section / Room</th>
-                                <th style="width: 120px; padding: 12px 10px;">Category</th>
-                                <th style="padding: 12px 10px;">Item Description</th>
-                                <th style="width: 80px; text-align: center; padding: 12px 10px;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="import-preview-table-body">
+                <!-- STEP 2: Enter Room Dimensions -->
+                <div id="import-wizard-step-2" style="display: none; flex-direction: column; gap: 14px; flex: 1; overflow: hidden;">
+                    <div style="flex-shrink: 0; margin-bottom: 6px;">
+                        <h4 class="text-sm font-semibold text-primary" style="margin: 0 0 4px 0; font-family: var(--font-heading);">Step 2: Enter Room Dimensions</h4>
+                        <p class="text-xs text-secondary" style="margin: 0;">Specify the Width, Length, and Height for each room. These measurements will automatically compute work quantities.</p>
+                    </div>
+                    
+                    <div id="import-rooms-dimensions-grid" style="border: 1px solid var(--border-color); border-radius: 6px; overflow-y: auto; flex: 1; padding: 16px; background: rgba(0,0,0,0.15); display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; align-content: start;">
+                        <!-- Filled dynamically -->
+                    </div>
+                </div>
+
+                <!-- STEP 3: Preview Items & Import -->
+                <div id="import-wizard-step-3" style="display: none; gap: 20px; overflow: hidden; flex: 1; min-height: 0; align-items: stretch; width: 100%;">
+                    <!-- Left Sidebar: Edit/View Room Sizing on the fly -->
+                    <div style="width: 300px; display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--border-color); padding-right: 20px; overflow-y: auto; flex-shrink: 0;">
+                        <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
+                            <h4 class="text-xs font-bold text-primary" style="margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">📐 Quick Dimension Adjust</h4>
+                            <p class="text-xs text-secondary" style="margin: 0;">Tweak room sizes here to re-calculate quantities instantly.</p>
+                        </div>
+                        <div id="import-step3-dimensions-container" style="display: flex; flex-direction: column; gap: 12px;">
                             <!-- Filled dynamically -->
-                        </tbody>
-                    </table>
+                        </div>
+                    </div>
+
+                    <!-- Right Side: Items Checklist -->
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 14px; overflow: hidden;">
+                        <!-- Project Name and Search row -->
+                        <div style="display: flex; gap: 12px; align-items: center; flex-shrink: 0; background: rgba(255,255,255,0.02); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                            <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                                <label class="text-xs text-secondary font-semibold" style="margin: 0;">Tender Project Name</label>
+                                <input type="text" id="import-project-name" class="form-input text-sm" style="width: 100%; padding: 6px 12px; background: rgba(0,0,0,0.25);" placeholder="Project Name">
+                            </div>
+                            <div style="width: 280px; display: flex; flex-direction: column; gap: 4px;">
+                                <label class="text-xs text-secondary font-semibold" style="margin: 0;">Filter Items</label>
+                                <div style="position: relative;">
+                                    <input type="text" id="import-preview-search" class="form-input text-xs" style="width: 100%; padding: 6px 10px 6px 28px; background: rgba(0,0,0,0.25);" placeholder="Search descriptions..." oninput="app.filterPreviewItems()">
+                                    <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 11px;">🔍</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-shrink: 0;">
+                            <button class="btn btn-secondary text-xs" style="padding: 6px 12px; font-weight: 500;" onclick="app.setAllPreviewSelection('yes')">Select 'Yes' Items Only</button>
+                            <button class="btn btn-secondary text-xs" style="padding: 6px 12px; font-weight: 500;" onclick="app.setAllPreviewSelection(true)">Select All</button>
+                            <button class="btn btn-secondary text-xs" style="padding: 6px 12px; font-weight: 500;" onclick="app.setAllPreviewSelection(false)">Deselect All</button>
+                        </div>
+
+                        <!-- Table Container -->
+                        <div style="border: 1px solid var(--border-color); border-radius: 6px; overflow-y: auto; flex: 1; min-height: 150px; background: rgba(0,0,0,0.15);">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead style="position: sticky; top: 0; background: var(--bg-secondary); z-index: 10; box-shadow: inset 0 -1px 0 var(--border-color);">
+                                    <tr>
+                                        <th style="width: 50px; text-align: center; padding: 12px 10px;">Import</th>
+                                        <th style="width: 160px; padding: 12px 10px; text-align: left;">Section / Room</th>
+                                        <th style="padding: 12px 10px; text-align: left;">Item Description</th>
+                                        <th style="width: 90px; text-align: right; padding: 12px 10px;">Qty</th>
+                                        <th style="width: 80px; text-align: center; padding: 12px 10px;">Unit</th>
+                                        <th style="width: 80px; text-align: center; padding: 12px 10px;">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="import-preview-table-body">
+                                    <!-- Filled dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="text-xs text-secondary" style="display: flex; justify-content: space-between; align-items: center; font-weight: 600; flex-shrink: 0;">
+                            <span>* Status represents the original status column in the spreadsheet.</span>
+                            <span>Selected <span id="import-preview-selected-count" class="text-primary">0</span> of <span id="import-preview-total-count">0</span> items</span>
+                        </div>
+                    </div>
                 </div>
-                
-                <div class="text-xs text-secondary" style="display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
-                    <span>* Status represents the original status column in the spreadsheet. Unchecked items can still be imported by ticking them above.</span>
-                    <span>Selected <span id="import-preview-selected-count" class="text-primary">0</span> of <span id="import-preview-total-count">0</span> items</span>
-                </div>
+
             </div>
-            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0;">
-                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="app.closeImportPreview()">Cancel</button>
-                <button id="btn-confirm-import" class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="app.confirmImport()">Confirm & Import</button>
+            
+            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0;" id="import-wizard-footer-buttons">
+                <!-- Buttons are inserted dynamically in app.js based on current step -->
             </div>
         </div>
     </div>

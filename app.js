@@ -964,7 +964,7 @@ class QSProApp {
         if (btnProcess) btnProcess.disabled = false;
     }
 
-    showImportPreview() {
+    async showImportPreview() {
         if (!this.state.importPreview) return;
         const modal = document.getElementById('import-preview-modal');
         if (!modal) return;
@@ -983,8 +983,317 @@ class QSProApp {
         if (searchInput) searchInput.value = '';
         this.state.importPreviewFilter = '';
 
+        // Extract all unique room/section names from items (without ignoring any)
+        const allRooms = [...new Set(this.state.importPreview.items.map(item => item.section || 'General').filter(r => r && r.trim() !== ''))];
+        allRooms.sort();
+
+        this.state.importPreview.allRooms = allRooms;
+        this.state.importPreview.selectedRooms = new Set(allRooms);
+
+        if (!this.state.importPreview.roomDimensions) {
+            this.state.importPreview.roomDimensions = {};
+        }
+
+        // Fetch global room sizes lookup to auto-populate
+        let roomLookup = {};
+        try {
+            roomLookup = await this.apiFetch('/api/room-measurements/lookup') || {};
+            console.log('[Import Preview] Loaded global room size lookups:', roomLookup);
+        } catch (e) {
+            console.warn('Failed to load room size lookups:', e);
+        }
+
+        allRooms.forEach(room => {
+            const roomKey = room.toLowerCase().trim();
+            const matched = roomLookup[roomKey];
+            if (matched) {
+                this.state.importPreview.roomDimensions[room] = {
+                    width: matched.width || '',
+                    length: matched.length || '',
+                    height: matched.height || ''
+                };
+            } else {
+                if (!this.state.importPreview.roomDimensions[room]) {
+                    this.state.importPreview.roomDimensions[room] = { width: '', length: '', height: '' };
+                }
+            }
+        });
+
+        // Open modal and navigate to Step 1
         modal.style.display = 'flex';
-        this.renderImportPreviewTable();
+        this.goToImportStep(1);
+    }
+
+    goToImportStep(step) {
+        this.state.importWizardStep = step;
+        
+        // Hide all steps
+        document.getElementById('import-wizard-step-1').style.display = 'none';
+        document.getElementById('import-wizard-step-2').style.display = 'none';
+        document.getElementById('import-wizard-step-3').style.display = 'none';
+        
+        // Show active step
+        const stepEl = document.getElementById(`import-wizard-step-${step}`);
+        if (stepEl) {
+            stepEl.style.display = step === 3 ? 'flex' : 'block';
+        }
+        
+        // Populate step data
+        if (step === 1) {
+            this.renderImportRoomsGrid();
+        } else if (step === 2) {
+            this.renderImportRoomsDimensionsGrid();
+        } else if (step === 3) {
+            this.recalculateAllImportQuantities();
+            this.renderImportStep3DimensionsContainer();
+            this.renderImportPreviewTable();
+        }
+        
+        this.renderWizardButtons(step);
+    }
+
+    selectAllImportRooms(checked) {
+        if (!this.state.importPreview || !this.state.importPreview.allRooms) return;
+        if (checked) {
+            this.state.importPreview.selectedRooms = new Set(this.state.importPreview.allRooms);
+        } else {
+            this.state.importPreview.selectedRooms = new Set();
+        }
+        this.renderImportRoomsGrid();
+    }
+
+    toggleImportRoomSelection(room, checked) {
+        if (!this.state.importPreview || !this.state.importPreview.selectedRooms) return;
+        if (checked) {
+            this.state.importPreview.selectedRooms.add(room);
+        } else {
+            this.state.importPreview.selectedRooms.delete(room);
+        }
+        
+        const nextBtn = document.getElementById('btn-import-next-1');
+        if (nextBtn) {
+            nextBtn.disabled = (this.state.importPreview.selectedRooms.size === 0);
+        }
+    }
+
+    renderImportRoomsGrid() {
+        const container = document.getElementById('import-rooms-selection-grid');
+        if (!container || !this.state.importPreview) return;
+        
+        container.innerHTML = '';
+        const allRooms = this.state.importPreview.allRooms || [];
+        
+        allRooms.forEach(room => {
+            const count = this.state.importPreview.items.filter(item => (item.section || 'General').toLowerCase().trim() === room.toLowerCase().trim()).length;
+            const isChecked = this.state.importPreview.selectedRooms.has(room);
+            
+            const card = document.createElement('label');
+            card.style.display = 'flex';
+            card.style.alignItems = 'center';
+            card.style.gap = '12px';
+            card.style.background = isChecked ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255, 255, 255, 0.02)';
+            card.style.border = isChecked ? '1px solid var(--color-indigo)' : '1px solid var(--border-color)';
+            card.style.borderRadius = '8px';
+            card.style.padding = '12px 16px';
+            card.style.cursor = 'pointer';
+            card.style.transition = 'all 0.2s';
+            
+            card.innerHTML = `
+                <input type="checkbox" style="width: 16px; height: 16px; accent-color: var(--color-indigo);" ${isChecked ? 'checked' : ''} onchange="app.toggleImportRoomSelection('${this.escapeHtml(room).replace(/'/g, "\\'")}', this.checked); this.parentElement.style.background = this.checked ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255, 255, 255, 0.02)'; this.parentElement.style.border = this.checked ? '1px solid var(--color-indigo)' : '1px solid var(--border-color)';">
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(room)}</span>
+                    <span style="font-size: 11px; color: var(--text-secondary);">${count} item${count === 1 ? '' : 's'}</span>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+
+        const nextBtn = document.getElementById('btn-import-next-1');
+        if (nextBtn) {
+            nextBtn.disabled = (this.state.importPreview.selectedRooms.size === 0);
+        }
+    }
+
+    renderImportRoomsDimensionsGrid() {
+        const container = document.getElementById('import-rooms-dimensions-grid');
+        if (!container || !this.state.importPreview) return;
+        
+        container.innerHTML = '';
+        const selectedRooms = Array.from(this.state.importPreview.selectedRooms);
+        selectedRooms.sort();
+        
+        if (selectedRooms.length === 0) {
+            container.innerHTML = `<div class="text-xs text-secondary text-center py-4" style="grid-column: 1/-1;">No rooms selected. Go back to choose rooms.</div>`;
+            return;
+        }
+        
+        selectedRooms.forEach(room => {
+            const dims = this.state.importPreview.roomDimensions[room] || { width: '', length: '', height: '' };
+            const card = document.createElement('div');
+            card.style.background = 'rgba(255,255,255,0.02)';
+            card.style.border = '1px solid var(--border-color)';
+            card.style.borderRadius = '8px';
+            card.style.padding = '14px';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.gap = '8px';
+            
+            card.innerHTML = `
+                <div class="text-xs font-semibold text-primary" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px; margin-bottom: 4px;">
+                    <span>📍 ${this.escapeHtml(room)}</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                        <span style="font-size: 10px; color: var(--text-secondary);">Width (m)</span>
+                        <input type="number" step="0.01" class="form-input text-xs" style="padding: 6px; text-align: right; background: rgba(0,0,0,0.25);" placeholder="W" value="${dims.width}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'width', this.value)">
+                    </div>
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                        <span style="font-size: 10px; color: var(--text-secondary);">Length (m)</span>
+                        <input type="number" step="0.01" class="form-input text-xs" style="padding: 6px; text-align: right; background: rgba(0,0,0,0.25);" placeholder="L" value="${dims.length}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'length', this.value)">
+                    </div>
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                        <span style="font-size: 10px; color: var(--text-secondary);">Height (m)</span>
+                        <input type="number" step="0.01" class="form-input text-xs" style="padding: 6px; text-align: right; background: rgba(0,0,0,0.25);" placeholder="H" value="${dims.height}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'height', this.value)">
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    renderImportStep3DimensionsContainer() {
+        const container = document.getElementById('import-step3-dimensions-container');
+        if (!container || !this.state.importPreview) return;
+        
+        container.innerHTML = '';
+        const selectedRooms = Array.from(this.state.importPreview.selectedRooms);
+        selectedRooms.sort();
+        
+        selectedRooms.forEach(room => {
+            const dims = this.state.importPreview.roomDimensions[room] || { width: '', length: '', height: '' };
+            const card = document.createElement('div');
+            card.style.background = 'rgba(255,255,255,0.01)';
+            card.style.border = '1px solid rgba(255,255,255,0.05)';
+            card.style.borderRadius = '6px';
+            card.style.padding = '8px 10px';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.gap = '4px';
+            
+            card.innerHTML = `
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">📍 ${this.escapeHtml(room)}</span>
+                <div style="display: flex; gap: 4px;">
+                    <input type="number" step="0.01" class="form-input text-xs" style="padding: 4px; text-align: right; background: rgba(0,0,0,0.25); flex: 1;" placeholder="W" value="${dims.width}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'width', this.value)">
+                    <input type="number" step="0.01" class="form-input text-xs" style="padding: 4px; text-align: right; background: rgba(0,0,0,0.25); flex: 1;" placeholder="L" value="${dims.length}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'length', this.value)">
+                    <input type="number" step="0.01" class="form-input text-xs" style="padding: 4px; text-align: right; background: rgba(0,0,0,0.25); flex: 1;" placeholder="H" value="${dims.height}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'height', this.value)">
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    recalculateAllImportQuantities() {
+        if (!this.state.importPreview) return;
+        this.state.importPreview.items.forEach(item => {
+            const room = item.section || 'General';
+            const dims = this.state.importPreview.roomDimensions[room];
+            if (dims && this.state.importPreview.selectedRooms.has(room)) {
+                const w = parseFloat(dims.width) || 0;
+                const l = parseFloat(dims.length) || 0;
+                const h = parseFloat(dims.height) || 0;
+                if (w > 0 && l > 0) {
+                    const calculatedQty = this.calculateQuantityFromDimensions(item.description, item.unit, w, l, h);
+                    if (calculatedQty !== null && calculatedQty > 0) {
+                        item.quantity = calculatedQty;
+                    }
+                }
+            }
+        });
+    }
+
+    updateRoomDimension(room, dimension, value) {
+        if (!this.state.importPreview || !this.state.importPreview.roomDimensions) return;
+        if (!this.state.importPreview.roomDimensions[room]) {
+            this.state.importPreview.roomDimensions[room] = { width: '', length: '', height: '' };
+        }
+        this.state.importPreview.roomDimensions[room][dimension] = value;
+        
+        // Recalculate quantities for items in this room
+        const dims = this.state.importPreview.roomDimensions[room];
+        const w = parseFloat(dims.width) || 0;
+        const l = parseFloat(dims.length) || 0;
+        const h = parseFloat(dims.height) || 0;
+
+        this.state.importPreview.items.forEach(item => {
+            if ((item.section || 'General').toLowerCase().trim() === room.toLowerCase().trim()) {
+                if (w > 0 && l > 0) {
+                    const calculatedQty = this.calculateQuantityFromDimensions(item.description, item.unit, w, l, h);
+                    if (calculatedQty !== null && calculatedQty > 0) {
+                        item.quantity = calculatedQty;
+                    }
+                }
+            }
+        });
+
+        // Live update Step 3 if currently viewed
+        if (this.state.importWizardStep === 3) {
+            this.renderImportPreviewTable();
+        }
+    }
+
+    calculateQuantityFromDimensions(description, unit, width, length, height) {
+        const w = parseFloat(width) || 0;
+        const l = parseFloat(length) || 0;
+        const h = parseFloat(height) || 0;
+
+        if (w <= 0 || l <= 0) return null;
+
+        const descLower = (description || '').toLowerCase();
+        const unitLower = (unit || '').toLowerCase().trim();
+
+        // Count units are non-dimensional and should never be calculated from room sizes
+        const countUnits = ['nr', 'no.', 'no', 'each', 'pcs', 'pc', 'n.r', 'number', 'qty', 'quantity'];
+        if (countUnits.includes(unitLower)) return null;
+
+        // 1. Skirting or Perimeter (lm or m)
+        if (descLower.includes('skirting') || descLower.includes('coving') || descLower.includes('cornice') || descLower.includes('perimeter') || descLower.includes('architrave') || descLower.includes('dpc')) {
+            return parseFloat((2 * (w + l)).toFixed(2));
+        }
+
+        // 2. Ceiling or Floor area / Floor finishes / Sanding / Screed (m2 / m²)
+        if (descLower.includes('ceiling') || descLower.includes('floor') || descLower.includes('screed') || descLower.includes('carpet') || descLower.includes('underlay') || descLower.includes('tiling') || descLower.includes('laminate') || descLower.includes('vinyl') || descLower.includes('hearth') || descLower.includes('joists') || descLower.includes('boards') || descLower.includes('sand and polish') || descLower.includes('sand & polish') || descLower.includes('sanding') || descLower.includes('lacquer') || descLower.includes('parquet') || descLower.includes('wood floor') || descLower.includes('floorboard') || descLower.includes('tile')) {
+            return parseFloat((w * l).toFixed(2));
+        }
+
+        // 3. Walls / Wall Decoration / Plastering / Skimming (m2 / m²)
+        if (descLower.includes('wall') || descLower.includes('plaster') || descLower.includes('decorate') || descLower.includes('paint') || descLower.includes('wallpaper') || descLower.includes('skimming') || descLower.includes('render') || descLower.includes('emulsion') || descLower.includes('decoration')) {
+            const wallHeight = h > 0 ? h : 2.4;
+            return parseFloat((2 * (w + l) * wallHeight).toFixed(2));
+        }
+
+        // 4. Volume (m3 / m³)
+        if (unitLower === 'm3' || unitLower === 'm³' || descLower.includes('volume') || descLower.includes('excavate') || descLower.includes('skip') || descLower.includes('waste')) {
+            if (h > 0) {
+                return parseFloat((w * l * h).toFixed(2));
+            }
+        }
+
+        // Fallback checks based on units
+        const isM2 = unitLower === 'm2' || unitLower === 'm²' || unitLower === 'sqm' || unitLower === 'sq.m' || unitLower === 'sq m';
+        const isM = unitLower === 'm' || unitLower === 'lm' || unitLower === 'linear' || unitLower === 'linear meter' || unitLower === 'l.m';
+        const isM3 = unitLower === 'm3' || unitLower === 'm³';
+
+        if (isM2) {
+            return parseFloat((w * l).toFixed(2));
+        }
+        if (isM) {
+            return parseFloat((2 * (w + l)).toFixed(2));
+        }
+        if (isM3 && h > 0) {
+            return parseFloat((w * l * h).toFixed(2));
+        }
+
+        return null;
     }
 
     renderImportPreviewTable() {
@@ -993,15 +1302,21 @@ class QSProApp {
         
         const filterText = (this.state.importPreviewFilter || '').toLowerCase().trim();
         const items = this.state.importPreview.items;
+        const selectedRooms = this.state.importPreview.selectedRooms || new Set();
         
         tbody.innerHTML = '';
         
         items.forEach((item, idx) => {
+            const section = item.section || 'General';
+            // Only show items of selected rooms/sections in Step 3 preview
+            if (!selectedRooms.has(section)) {
+                return;
+            }
+
             const matchDesc = String(item.description || '').toLowerCase().includes(filterText);
-            const matchSection = String(item.section || '').toLowerCase().includes(filterText);
-            const matchCat = String(item.category || '').toLowerCase().includes(filterText);
+            const matchSection = String(section).toLowerCase().includes(filterText);
             
-            if (filterText && !matchDesc && !matchSection && !matchCat) {
+            if (filterText && !matchDesc && !matchSection) {
                 return;
             }
             
@@ -1010,9 +1325,10 @@ class QSProApp {
                 <td style="text-align: center; padding: 10px;">
                     <input type="checkbox" data-index="${idx}" ${item.selected ? 'checked' : ''} onchange="app.togglePreviewRow(${idx}, this.checked)">
                 </td>
-                <td style="padding: 10px; font-weight: 500; color: var(--text-primary);">${this.escapeHtml(item.section || 'General')}</td>
-                <td style="padding: 10px; color: var(--text-muted);">${this.escapeHtml(item.category || '-')}</td>
+                <td style="padding: 10px; font-weight: 500; color: var(--text-primary);">${this.escapeHtml(section)}</td>
                 <td style="padding: 10px; color: var(--text-primary);">${this.escapeHtml(item.description || '')}</td>
+                <td style="text-align: right; padding: 10px; font-weight: 700; color: #10b981;">${item.quantity || 1}</td>
+                <td style="text-align: center; padding: 10px; color: var(--text-muted); font-size: 11px;">${this.escapeHtml(item.unit || 'Item')}</td>
                 <td style="text-align: center; padding: 10px;">
                     <span class="badge ${item.status === 'Yes' ? 'badge-emerald' : 'badge-gray'}" style="font-size: 10px; padding: 2px 6px;">
                         ${item.status || 'No'}
@@ -1025,10 +1341,36 @@ class QSProApp {
         this.updatePreviewCount();
     }
 
+    renderWizardButtons(step) {
+        const btnContainer = document.getElementById('import-wizard-footer-buttons');
+        if (!btnContainer) return;
+        
+        btnContainer.innerHTML = '';
+        
+        if (step === 1) {
+            btnContainer.innerHTML = `
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="app.closeImportPreview()">Cancel</button>
+                <button id="btn-import-next-1" class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="app.goToImportStep(2)">Next: Enter Room Sizes &rarr;</button>
+            `;
+        } else if (step === 2) {
+            btnContainer.innerHTML = `
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="app.goToImportStep(1)">&larr; Back to Rooms</button>
+                <button class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="app.goToImportStep(3)">Next: Preview Items &rarr;</button>
+            `;
+        } else if (step === 3) {
+            const selected = this.state.importPreview ? this.state.importPreview.items.filter(item => item.selected && this.state.importPreview.selectedRooms.has(item.section || 'General')).length : 0;
+            btnContainer.innerHTML = `
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="app.goToImportStep(2)">&larr; Back to Sizes</button>
+                <button id="btn-confirm-import" class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="app.confirmImport()" ${selected === 0 ? 'disabled' : ''}>Confirm & Import</button>
+            `;
+        }
+    }
+
     togglePreviewRow(index, checked) {
         if (this.state.importPreview && this.state.importPreview.items[index]) {
             this.state.importPreview.items[index].selected = checked;
             this.updatePreviewCount();
+            this.renderWizardButtons(3);
         }
     }
 
@@ -1036,13 +1378,16 @@ class QSProApp {
         if (!this.state.importPreview) return;
         
         const filterText = (this.state.importPreviewFilter || '').toLowerCase().trim();
+        const selectedRooms = this.state.importPreview.selectedRooms || new Set();
         
         this.state.importPreview.items.forEach(item => {
+            const section = item.section || 'General';
+            if (!selectedRooms.has(section)) return;
+
             const matchDesc = String(item.description || '').toLowerCase().includes(filterText);
-            const matchSection = String(item.section || '').toLowerCase().includes(filterText);
-            const matchCat = String(item.category || '').toLowerCase().includes(filterText);
+            const matchSection = String(section).toLowerCase().includes(filterText);
             
-            if (!filterText || matchDesc || matchSection || matchCat) {
+            if (!filterText || matchDesc || matchSection) {
                 if (checked === 'yes') {
                     item.selected = (item.status === 'Yes');
                 } else {
@@ -1052,6 +1397,7 @@ class QSProApp {
         });
         
         this.renderImportPreviewTable();
+        this.renderWizardButtons(3);
     }
 
     filterPreviewItems() {
@@ -1062,19 +1408,16 @@ class QSProApp {
 
     updatePreviewCount() {
         if (!this.state.importPreview) return;
-        const total = this.state.importPreview.items.length;
-        const selected = this.state.importPreview.items.filter(item => item.selected).length;
+        const selectedRooms = this.state.importPreview.selectedRooms || new Set();
+        const items = this.state.importPreview.items.filter(item => selectedRooms.has(item.section || 'General'));
+        const total = items.length;
+        const selected = items.filter(item => item.selected).length;
         
         const selEl = document.getElementById('import-preview-selected-count');
         const totEl = document.getElementById('import-preview-total-count');
         
         if (selEl) selEl.textContent = selected;
         if (totEl) totEl.textContent = total;
-
-        const btnConfirm = document.getElementById('btn-confirm-import');
-        if (btnConfirm) {
-            btnConfirm.disabled = (selected === 0);
-        }
     }
 
     closeImportPreview() {
@@ -1101,7 +1444,8 @@ class QSProApp {
             return;
         }
         
-        const selectedItems = this.state.importPreview.items.filter(item => item.selected);
+        const selectedRooms = this.state.importPreview.selectedRooms || new Set();
+        const selectedItems = this.state.importPreview.items.filter(item => item.selected && selectedRooms.has(item.section || 'General'));
         if (selectedItems.length === 0) {
             return;
         }
@@ -1113,11 +1457,20 @@ class QSProApp {
         }
         
         try {
+            // Only send room measurements for selected rooms
+            const filteredRoomDimensions = {};
+            selectedRooms.forEach(room => {
+                if (this.state.importPreview.roomDimensions[room]) {
+                    filteredRoomDimensions[room] = this.state.importPreview.roomDimensions[room];
+                }
+            });
+
             const importRes = await this.apiFetch('/api/projects/import', {
                 method: 'POST',
                 body: {
                     projectName,
-                    items: selectedItems
+                    items: selectedItems,
+                    roomMeasurements: filteredRoomDimensions
                 }
             });
             

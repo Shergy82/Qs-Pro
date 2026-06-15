@@ -135,6 +135,145 @@ function isInformationalOnly(descLower) {
   return false;
 }
 
+function normalizeDescription(description, section) {
+  if (!description) return '';
+  let clean = description.toLowerCase().trim();
+  
+  // If section is provided, clean it
+  if (section) {
+    const secLower = section.toLowerCase().trim();
+    if (secLower && secLower !== 'general' && secLower !== 'unspecified') {
+      if (clean.startsWith(secLower)) {
+        clean = clean.substring(secLower.length).trim();
+      }
+      clean = clean.replace(/^[-\s:;,]+/g, '').trim();
+    }
+  }
+  
+  const roomPrefixes = [
+    'lounge', 'kitchen', 'hall', 'stairs', 'landing', 'bedroom', 'bathroom', 
+    'sitting room', 'living room', 'dining room', 'wc', 'toilet', 'cupboard', 
+    'boiler cupboard', 'garden', 'front garden', 'rear garden', 'external', 
+    'externals', 'stairs and landing', 'entrance hall'
+  ];
+  for (const prefix of roomPrefixes) {
+    if (clean.startsWith(prefix)) {
+      let temp = clean.substring(prefix.length).trim();
+      temp = temp.replace(/^[-\s:;,]+/g, '').trim();
+      if (temp.length > 3) {
+        clean = temp;
+      }
+    }
+  }
+  
+  clean = clean.replace(/[.,;:()\-]+/g, ' ');
+  clean = clean.replace(/\s+/g, ' ').trim();
+  
+  return clean;
+}
+
+function extractRoomFromDescription(description, currentSection) {
+  if (!description) return { room: currentSection || 'General', description: '' };
+  
+  const originalDesc = description.trim();
+  const descLower = originalDesc.toLowerCase();
+  
+  // List of common rooms and their variations
+  const roomPatterns = [
+    { name: "Stairs & Landing - Boiler Cupboard", keywords: ["stairs and landing boiler cupboard", "stairs & landing boiler cupboard", "stairs and landing boiler cup'd", "stairs & landing boiler cup'd", "stairs and landing boiler cup", "stairs & landing boiler cup"] },
+    { name: "Stairs and Landing", keywords: ["stairs and landing", "stairs & landing", "stairs/landing"] },
+    { name: "Boiler Cupboard", keywords: ["boiler cupboard", "boiler cup'd", "boiler cupboard/store", "boiler cupboard / store", "boiler cup", "boiler cupd"] },
+    { name: "Lounge", keywords: ["lounge", "living room", "sitting room", "reception room", "reception"] },
+    { name: "Kitchen/Diner", keywords: ["kitchen/diner", "kitchen & diner", "kitchen diner"] },
+    { name: "Kitchen", keywords: ["kitchen"] },
+    { name: "Dining Room", keywords: ["dining room", "dining"] },
+    { name: "Bedroom 1", keywords: ["bedroom 1", "bed 1", "master bedroom"] },
+    { name: "Bedroom 2", keywords: ["bedroom 2", "bed 2"] },
+    { name: "Bedroom 3", keywords: ["bedroom 3", "bed 3"] },
+    { name: "Bedroom 4", keywords: ["bedroom 4", "bed 4"] },
+    { name: "Bedroom", keywords: ["bedroom"] },
+    { name: "Bathroom", keywords: ["bathroom", "bath room"] },
+    { name: "Ensuite", keywords: ["ensuite", "en-suite", "en suite"] },
+    { name: "WC", keywords: ["wc", "cloakroom", "toilet"] },
+    { name: "Entrance Hall", keywords: ["entrance hall", "hallway", "hall", "lobby"] },
+    { name: "Landing", keywords: ["landing"] },
+    { name: "Utility Room", keywords: ["utility room", "utility"] },
+    { name: "Store", keywords: ["store room", "store", "cupboard", "walk-in cupboard"] },
+    { name: "Garage", keywords: ["garage"] },
+    { name: "Garden", keywords: ["garden", "patio", "backyard", "yard"] },
+    { name: "External", keywords: ["external works", "external", "roof", "chimney", "elevation", "outside", "outbuilding"] }
+  ];
+
+  // 1. Check if the description starts with a known room name pattern
+  for (const pattern of roomPatterns) {
+    for (const kw of pattern.keywords) {
+      const escapedKw = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp('^' + escapedKw + '\\b', 'i');
+      if (regex.test(descLower)) {
+        let rest = originalDesc.substring(kw.length).trim();
+        rest = rest.replace(/^[:\-\s,]+/, '').trim();
+        if (rest) {
+          rest = rest.charAt(0).toUpperCase() + rest.slice(1);
+        } else {
+          rest = originalDesc;
+        }
+        return { room: pattern.name, description: rest };
+      }
+    }
+  }
+
+  // 2. Fallback to check if a prefix like "Lounge - Paint Ceiling" exists with colon/hyphen
+  const prefixMatch = originalDesc.match(/^([a-zA-Z0-9\s&\/]+?)\s*[:\-]\s*(.*)$/);
+  if (prefixMatch) {
+    const potentialRoom = prefixMatch[1].trim();
+    const rest = prefixMatch[2].trim();
+    if (potentialRoom.split(/\s+/).length <= 3 && potentialRoom.length > 2 && potentialRoom.length < 30) {
+      let roomMatched = null;
+      for (const pattern of roomPatterns) {
+        if (pattern.keywords.some(kw => potentialRoom.toLowerCase() === kw || potentialRoom.toLowerCase().includes(kw))) {
+          roomMatched = pattern.name;
+          break;
+        }
+      }
+      if (roomMatched) {
+        return { room: roomMatched, description: rest };
+      }
+
+      // If it doesn't match a known room, check if it's a trade or structural element keyword rather than a room
+      const lowerPot = potentialRoom.toLowerCase();
+      const elementKeywords = [
+        'ceiling', 'wall', 'floor', 'window', 'door', 'woodwork', 'radiator', 'fireplace', 
+        'additional', 'unit', 'appliance', 'skirting', 'lighting', 'light', 'plaster', 
+        'paint', 'decorat', 'services', 'demolition', 'groundwork', 'superstructure', 
+        'substructure', 'roof', 'chimney', 'electrical', 'plumbing', 'heating', 'carpentry', 
+        'masonry', 'brickwork', 'spec', 'note', 'general', 'other'
+      ];
+      const isElement = elementKeywords.some(kw => lowerPot.includes(kw));
+      if (!isElement) {
+        return { room: potentialRoom.charAt(0).toUpperCase() + potentialRoom.slice(1).toLowerCase(), description: rest };
+      }
+    }
+  }
+
+  // 3. Check if description contains any of the room keywords in the first 40 characters
+  // Only do this if currentSection is generic (like "General", "Unspecified")
+  const isGenericSection = !currentSection || 
+    ['general', 'unspecified', 'unknown', 'sheet1', 'checklist', 'worksheet', 'estimation'].includes(currentSection.toLowerCase().trim());
+  
+  if (isGenericSection) {
+    for (const pattern of roomPatterns) {
+      for (const kw of pattern.keywords) {
+        const idx = descLower.indexOf(kw);
+        if (idx !== -1 && idx < 40) {
+          return { room: pattern.name, description: originalDesc };
+        }
+      }
+    }
+  }
+
+  return { room: currentSection || 'General', description: originalDesc };
+}
+
 function localHeuristicExcelParser(filePath) {
   console.log('[Local Parser] Running robust local heuristic fallback parser...');
   try {
@@ -245,9 +384,10 @@ function localHeuristicExcelParser(filePath) {
             continue;
           }
 
+          const roomResult = extractRoomFromDescription(combinedDesc, currentSection);
           items.push({
-            section: currentSection,
-            description: combinedDesc,
+            section: roomResult.room,
+            description: roomResult.description,
             quantity: 1,
             unit: 'Item',
             labourRate: 0,
@@ -400,9 +540,10 @@ function localHeuristicExcelParser(filePath) {
           }
         }
         
+        const roomResult = extractRoomFromDescription(description, currentSection);
         items.push({
-          section: currentSection,
-          description: description,
+          section: roomResult.room,
+          description: roomResult.description,
           quantity: quantity,
           unit: unit,
           labourRate,
@@ -950,13 +1091,36 @@ app.get('/api/rates', requireAuth, async (req, res) => {
 });
 
 app.post('/api/rates', requireAuth, async (req, res) => {
-  const { name, trade, unit, costRate, category, supplier, sourceUrl, lastUpdated } = req.body;
+  let { name, trade, unit, costRate, materialRate, labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated } = req.body;
   const id = crypto.randomUUID();
+  
+  const mRate = parseFloat(materialRate) || 0;
+  const lRate = parseFloat(labourRate) || 0;
+  const pRate = parseFloat(plantRate) || 0;
+  const sRate = parseFloat(subRate) || 0;
+  
+  if (materialRate !== undefined || labourRate !== undefined || plantRate !== undefined || subRate !== undefined) {
+    costRate = mRate + lRate + pRate + sRate;
+  } else {
+    materialRate = costRate || 0;
+    labourRate = 0;
+    plantRate = 0;
+    subRate = 0;
+  }
+
   try {
     const db = await getDbConnection();
     await db.run(
-      'INSERT INTO rates (id, user_id, name, trade, unit, costRate, category, supplier, sourceUrl, lastUpdated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, req.user.id, name, trade, unit, costRate, category, supplier, sourceUrl, lastUpdated || new Date().toISOString().split('T')[0]]
+      `INSERT INTO rates (
+        id, user_id, name, trade, unit, costRate, materialRate, labourRate, plantRate, subRate,
+        category, supplier, sourceUrl, lastUpdated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, req.user.id, name, trade, unit, parseFloat(costRate) || 0,
+        parseFloat(materialRate) || 0, parseFloat(labourRate) || 0,
+        parseFloat(plantRate) || 0, parseFloat(subRate) || 0,
+        category, supplier, sourceUrl, lastUpdated || new Date().toISOString().split('T')[0]
+      ]
     );
     const newRate = await db.get('SELECT * FROM rates WHERE id = ?', id);
     await db.close();
@@ -968,12 +1132,36 @@ app.post('/api/rates', requireAuth, async (req, res) => {
 
 app.put('/api/rates/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { name, trade, unit, costRate, category, supplier, sourceUrl, lastUpdated } = req.body;
+  let { name, trade, unit, costRate, materialRate, labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated } = req.body;
+  
+  const mRate = parseFloat(materialRate) || 0;
+  const lRate = parseFloat(labourRate) || 0;
+  const pRate = parseFloat(plantRate) || 0;
+  const sRate = parseFloat(subRate) || 0;
+  
+  if (materialRate !== undefined || labourRate !== undefined || plantRate !== undefined || subRate !== undefined) {
+    costRate = mRate + lRate + pRate + sRate;
+  } else {
+    materialRate = costRate || 0;
+    labourRate = 0;
+    plantRate = 0;
+    subRate = 0;
+  }
+
   try {
     const db = await getDbConnection();
     await db.run(
-      'UPDATE rates SET name=?, trade=?, unit=?, costRate=?, category=?, supplier=?, sourceUrl=?, lastUpdated=? WHERE id=? AND user_id=?',
-      [name, trade, unit, costRate, category, supplier, sourceUrl, lastUpdated || new Date().toISOString().split('T')[0], id, req.user.id]
+      `UPDATE rates SET 
+        name=?, trade=?, unit=?, costRate=?, materialRate=?, labourRate=?, plantRate=?, subRate=?,
+        category=?, supplier=?, sourceUrl=?, lastUpdated=? 
+       WHERE id=? AND user_id=?`,
+      [
+        name, trade, unit, parseFloat(costRate) || 0,
+        parseFloat(materialRate) || 0, parseFloat(labourRate) || 0,
+        parseFloat(plantRate) || 0, parseFloat(subRate) || 0,
+        category, supplier, sourceUrl, lastUpdated || new Date().toISOString().split('T')[0],
+        id, req.user.id
+      ]
     );
     const updatedRate = await db.get('SELECT * FROM rates WHERE id = ?', id);
     await db.close();
@@ -1274,6 +1462,35 @@ app.post('/api/projects/:id/room-measurements', requireAuth, async (req, res) =>
   }
 });
 
+app.get('/api/room-measurements/lookup', requireAuth, async (req, res) => {
+  try {
+    const db = await getDbConnection();
+    const rows = await db.all(
+      `SELECT rm.room, rm.width, rm.length, rm.height 
+       FROM room_measurements rm
+       JOIN projects p ON rm.project_id = p.id
+       WHERE p.user_id = ?`,
+      req.user.id
+    );
+    await db.close();
+    
+    // De-duplicate room names, keeping the last one (most recent)
+    const lookup = {};
+    for (const row of rows) {
+      if (!row.room) continue;
+      const roomClean = row.room.toLowerCase().trim();
+      lookup[roomClean] = {
+        width: row.width,
+        length: row.length,
+        height: row.height
+      };
+    }
+    res.json(lookup);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- Estimate Items API ---
 app.get('/api/projects/:id/estimates', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -1380,6 +1597,48 @@ app.put('/api/estimate-items/:id', requireAuth, async (req, res) => {
       ]
     );
 
+    // Smart pricing: Automatically save manually adjusted/edited price to global rates table
+    const normName = normalizeDescription(description, section);
+    if (normName) {
+      const parsedMat = parseFloat(materialRate) || 0;
+      const parsedLab = parseFloat(labourRate) || 0;
+      const parsedPlant = parseFloat(plantRate) || 0;
+      const parsedSub = parseFloat(subRate) || 0;
+      const totalCostRate = parsedMat + parsedLab + parsedPlant + parsedSub;
+      
+      const existingRate = await db.get(
+        'SELECT id FROM rates WHERE user_id = ? AND LOWER(name) = ?',
+        [req.user.id, normName.toLowerCase()]
+      );
+      const dateStr = new Date().toISOString().split('T')[0];
+      if (existingRate) {
+        await db.run(
+          `UPDATE rates SET 
+            costRate = ?,
+            materialRate = ?,
+            labourRate = ?,
+            plantRate = ?,
+            subRate = ?,
+            unit = ?,
+            lastUpdated = ?
+           WHERE id = ?`,
+          [totalCostRate, parsedMat, parsedLab, parsedPlant, parsedSub, unit || 'Item', dateStr, existingRate.id]
+        );
+      } else {
+        await db.run(
+          `INSERT INTO rates (
+            id, user_id, name, trade, unit, costRate, materialRate,
+            labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            crypto.randomUUID(), req.user.id, normName, 'General', unit || 'Item',
+            totalCostRate, parsedMat, parsedLab, parsedPlant, parsedSub,
+            'Material', merchant || 'Manual Adjustment', productUrl || '', dateStr
+          ]
+        );
+      }
+    }
+
     await recalculateProjectCost(db, oldItem.project_id);
     
     // Get updated item
@@ -1447,13 +1706,68 @@ app.post('/api/projects/:id/reprice', requireAuth, async (req, res) => {
       return res.json({ success: true, message: 'No items to reprice.' });
     }
 
-    const libraryRates = await db.all('SELECT name, trade, unit, costRate, category, supplier, sourceUrl FROM rates WHERE user_id = ?', req.user.id);
+    const libraryRates = await db.all(
+      'SELECT id, name, trade, unit, costRate, materialRate, labourRate, plantRate, subRate, category, supplier, sourceUrl FROM rates WHERE user_id = ?',
+      req.user.id
+    );
     const labourRates = await db.all('SELECT * FROM labour_rates WHERE user_id = ?', req.user.id);
 
-    console.log(`Repricing ${items.length} items for project "${project.name}" (User: ${req.user.id}) in a single bundled Gemini call...`);
+    console.log(`Repricing ${items.length} items for project "${project.name}" (User: ${req.user.id}) with database lookup & de-duplication...`);
 
-    const prompt = `You are a professional UK Senior Quantity Surveyor. Price the following list of construction work items:
-${JSON.stringify(items.map(item => ({ id: item.id, description: item.description, quantity: item.quantity, unit: item.unit })))}
+    // Group items by normalized description to ensure 100% rate consistency
+    const itemsGroupedByDesc = {};
+    for (const item of items) {
+      const normDesc = normalizeDescription(item.description, item.section);
+      if (!itemsGroupedByDesc[normDesc]) {
+        itemsGroupedByDesc[normDesc] = [];
+      }
+      itemsGroupedByDesc[normDesc].push(item);
+    }
+
+    const matchedPricedItems = [];
+    const unmatchedRepresentativeItems = [];
+
+    // Normalization matching against price book
+    for (const [normDesc, groupItems] of Object.entries(itemsGroupedByDesc)) {
+      // Find match in libraryRates
+      let bestMatch = null;
+      for (const rate of libraryRates) {
+        const rateNorm = normalizeDescription(rate.name, '');
+        if (rateNorm === normDesc && rateNorm !== '') {
+          bestMatch = rate;
+          break;
+        }
+      }
+
+      if (bestMatch) {
+        // Apply this exact price to all items in the group
+        for (const item of groupItems) {
+          matchedPricedItems.push({
+            id: item.id,
+            materialRate: bestMatch.materialRate || bestMatch.costRate || 0,
+            labourRate: bestMatch.labourRate || 0,
+            plantRate: bestMatch.plantRate || 0,
+            subRate: bestMatch.subRate || 0,
+            merchant: bestMatch.supplier || '',
+            productUrl: bestMatch.sourceUrl || '',
+            confidence: 'High',
+            warnings: [],
+            assumptions: 'Matched from global Price Book',
+            notes: ''
+          });
+        }
+      } else {
+        // No match: select the first item as representative to send to Gemini
+        unmatchedRepresentativeItems.push(groupItems[0]);
+      }
+    }
+
+    let pricedFromGemini = [];
+    if (unmatchedRepresentativeItems.length > 0) {
+      console.log(`Sending ${unmatchedRepresentativeItems.length} unmatched representative items to Gemini...`);
+      
+      const prompt = `You are a professional UK Senior Quantity Surveyor. Price the following list of construction work items:
+${JSON.stringify(unmatchedRepresentativeItems.map(item => ({ id: item.id, description: item.description, quantity: item.quantity, unit: item.unit })))}
 
 Current Project Trade Category: ${project.tradeCategory}
 
@@ -1461,7 +1775,7 @@ Use the saved price library and labour rates below as your preferred database. I
 
 ---
 SAVED PRICE LIBRARY:
-${JSON.stringify(libraryRates)}
+${JSON.stringify(libraryRates.map(r => ({ name: r.name, trade: r.trade, unit: r.unit, costRate: r.costRate })))}
 
 SAVED LABOUR DAY RATES:
 ${JSON.stringify(labourRates)}
@@ -1500,28 +1814,94 @@ JSON format:
   ...
 ]`;
 
-    let pricedItems = [];
-    try {
-      if (forceLocal || !ai) {
-        if (!ai) {
-          console.warn('[Reprice Engine] Gemini API key is not configured. Automatically falling back to local Price Book offline matching...');
-        } else {
-          console.log('[Reprice Engine] Force local flag requested. Bypassing Gemini...');
-        }
-        pricedItems = localKeywordPricing(items, libraryRates, labourRates, project.tradeCategory);
-      } else {
-        const response = await generateContentWithRetry({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
+      try {
+        if (forceLocal || !ai) {
+          if (!ai) {
+            console.warn('[Reprice Engine] Gemini API key is not configured. Automatically falling back to local Price Book offline matching...');
+          } else {
+            console.log('[Reprice Engine] Force local flag requested. Bypassing Gemini...');
           }
-        }, 3, 1500); // 3 attempts max, 1.5s delay -> fail fast (approx 5-8s max wait)
-        pricedItems = JSON.parse(response.text);
+          pricedFromGemini = localKeywordPricing(unmatchedRepresentativeItems, libraryRates, labourRates, project.tradeCategory);
+        } else {
+          const response = await generateContentWithRetry({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+            }
+          }, 3, 1500);
+          pricedFromGemini = JSON.parse(response.text);
+        }
+      } catch (geminiError) {
+        console.warn('[Reprice Engine] Gemini API repricing failed. Falling back to local...', geminiError);
+        pricedFromGemini = localKeywordPricing(unmatchedRepresentativeItems, libraryRates, labourRates, project.tradeCategory);
       }
-    } catch (geminiError) {
-      console.warn('[Reprice Engine] Gemini API repricing failed or was rate-limited. Falling back to local Price Book keyword-matching...', geminiError);
-      pricedItems = localKeywordPricing(items, libraryRates, labourRates, project.tradeCategory);
+    }
+
+    // Combine matched database rates and newly generated rates
+    const finalPricedItems = [...matchedPricedItems];
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    for (const priced of pricedFromGemini) {
+      if (!priced.id) continue;
+      
+      const repItem = unmatchedRepresentativeItems.find(item => item.id === priced.id);
+      if (!repItem) continue;
+
+      const normDesc = normalizeDescription(repItem.description, repItem.section);
+      const groupItems = itemsGroupedByDesc[normDesc] || [];
+
+      // Apply to all items in the group
+      for (const item of groupItems) {
+        finalPricedItems.push({
+          id: item.id,
+          materialRate: priced.materialRate || 0,
+          labourRate: priced.labourRate || 0,
+          plantRate: priced.plantRate || 0,
+          subRate: priced.subRate || 0,
+          merchant: priced.merchant || '',
+          productUrl: priced.productUrl || '',
+          confidence: priced.confidence || 'Medium',
+          warnings: priced.warnings || [],
+          assumptions: priced.assumptions || '',
+          notes: priced.notes || ''
+        });
+      }
+
+      // Automatically save to the global Price Book
+      if (normDesc) {
+        const totalCostRate = (priced.materialRate || 0) + (priced.labourRate || 0) + (priced.plantRate || 0) + (priced.subRate || 0);
+        const existingRate = await db.get(
+          'SELECT id FROM rates WHERE user_id = ? AND LOWER(name) = ?',
+          [req.user.id, normDesc.toLowerCase()]
+        );
+        if (existingRate) {
+          await db.run(
+            `UPDATE rates SET 
+              costRate = ?,
+              materialRate = ?,
+              labourRate = ?,
+              plantRate = ?,
+              subRate = ?,
+              unit = ?,
+              lastUpdated = ?
+             WHERE id = ?`,
+            [totalCostRate, priced.materialRate || 0, priced.labourRate || 0, priced.plantRate || 0, priced.subRate || 0, repItem.unit || 'Item', dateStr, existingRate.id]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO rates (
+              id, user_id, name, trade, unit, costRate, materialRate,
+              labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              crypto.randomUUID(), req.user.id, normDesc, 'General', repItem.unit || 'Item',
+              totalCostRate, priced.materialRate || 0, priced.labourRate || 0, priced.plantRate || 0, priced.subRate || 0,
+              'Material', priced.merchant || 'AI Suggest', priced.productUrl || '', dateStr
+            ]
+          );
+        }
+      }
     }
 
     // Update in a transaction
@@ -1542,7 +1922,7 @@ JSON format:
          WHERE id = ?`
       );
 
-      for (const priced of pricedItems) {
+      for (const priced of finalPricedItems) {
         if (!priced.id) continue;
         await updateStmt.run([
           priced.labourRate || 0,
@@ -1569,7 +1949,7 @@ JSON format:
     await recalculateProjectCost(db, id);
 
     await db.close();
-    res.json({ success: true, message: `All ${pricedItems.length} items priced successfully` });
+    res.json({ success: true, message: `All ${finalPricedItems.length} items priced successfully` });
   } catch (error) {
     console.error('Reprice engine error:', error);
     res.status(500).json({ error: error.message });
@@ -1953,7 +2333,7 @@ ${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quanti
 
 // --- Project Import API ---
 app.post('/api/projects/import', requireAuth, async (req, res) => {
-  const { projectName, items } = req.body;
+  const { projectName, items, roomMeasurements } = req.body;
   if (!projectName || !Array.isArray(items)) {
     return res.status(400).json({ error: 'projectName and items array are required.' });
   }
@@ -1976,6 +2356,24 @@ app.post('/api/projects/import', requireAuth, async (req, res) => {
       ]
     );
 
+    // Save room measurements if provided
+    if (roomMeasurements && typeof roomMeasurements === 'object') {
+      const insertRoom = await db.prepare(
+        `INSERT OR REPLACE INTO room_measurements (project_id, room, width, length, height)
+         VALUES (?, ?, ?, ?, ?)`
+      );
+      for (const [room, dims] of Object.entries(roomMeasurements)) {
+        await insertRoom.run(
+          projectId,
+          room.toLowerCase().trim(),
+          parseFloat(dims.width) || 0,
+          parseFloat(dims.length) || 0,
+          parseFloat(dims.height) || 0
+        );
+      }
+      await insertRoom.finalize();
+    }
+
     const insertItem = await db.prepare(
       `INSERT INTO estimate_items (
         id, project_id, section, description, quantity, unit, labourRate, materialRate,
@@ -1992,6 +2390,16 @@ app.post('/api/projects/import', requireAuth, async (req, res) => {
           combined = desc;
         } else {
           combined = `${cat}: ${desc}`;
+        }
+      }
+
+      // Ensure the room name is prepended to identify the room as requested
+      const sectionClean = (item.section || 'General').trim();
+      if (sectionClean && sectionClean.toLowerCase() !== 'general') {
+        const sLower = sectionClean.toLowerCase();
+        const dLower = combined.toLowerCase();
+        if (!dLower.startsWith(sLower)) {
+          combined = `${sectionClean} ${combined}`;
         }
       }
 
@@ -2144,10 +2552,11 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
             const details = descColIdx !== -1 && row[descColIdx] ? String(row[descColIdx]).trim() : '';
             if (!details && !cat) continue;
 
+            const roomResult = extractRoomFromDescription(details, currentSection);
             extractedItems.push({
-              section: currentSection,
+              section: roomResult.room,
               category: cat,
-              description: details,
+              description: roomResult.description,
               status: isSelected ? 'Yes' : 'No',
               selected: isSelected,
               quantity: 1,
@@ -2270,10 +2679,11 @@ ${excelText}`
           }, 2, 1000);
           const geminiItems = JSON.parse(response.text);
           geminiItems.forEach(item => {
+            const roomResult = extractRoomFromDescription(item.description || '', item.section || 'General');
             extractedItems.push({
-              section: item.section || 'General',
+              section: roomResult.room,
               category: '',
-              description: item.description || '',
+              description: roomResult.description,
               quantity: item.quantity || 1,
               unit: item.unit || 'Item',
               status: 'Yes',
@@ -2286,12 +2696,13 @@ ${excelText}`
           const fallbackItems = localHeuristicExcelParser(req.file.path);
           fallbackItems.forEach(item => {
             // Only add if not already in extractedItems to avoid double parsing checklist sheets
-            const isAlreadyAdded = extractedItems.some(i => i.section === item.section && i.description === item.description);
+            const roomResult = extractRoomFromDescription(item.description || '', item.section || 'General');
+            const isAlreadyAdded = extractedItems.some(i => i.section === roomResult.room && i.description === roomResult.description);
             if (!isAlreadyAdded) {
               extractedItems.push({
-                section: item.section || 'General',
+                section: roomResult.room,
                 category: '',
-                description: item.description || '',
+                description: roomResult.description,
                 quantity: item.quantity || 1,
                 unit: item.unit || 'Item',
                 status: 'Yes',
@@ -2353,15 +2764,18 @@ Structure for each object:
 
         try { await ai.files.delete({ name: uploadResult.name }); } catch(e) {}
         const rawItems = JSON.parse(response.text);
-        extractedItems = rawItems.map(item => ({
-          section: item.section || 'General',
-          category: '',
-          description: item.description || '',
-          quantity: item.quantity || 1,
-          unit: item.unit || 'Item',
-          status: 'Yes',
-          selected: true
-        }));
+        extractedItems = rawItems.map(item => {
+          const roomResult = extractRoomFromDescription(item.description || '', item.section || 'General');
+          return {
+            section: roomResult.room,
+            category: '',
+            description: roomResult.description,
+            quantity: item.quantity || 1,
+            unit: item.unit || 'Item',
+            status: 'Yes',
+            selected: true
+          };
+        });
         fs.unlinkSync(req.file.path);
       } catch (geminiError) {
         try { fs.unlinkSync(req.file.path); } catch (e) {}
@@ -2389,5 +2803,6 @@ app.listen(PORT, () => {
 module.exports = {
   localHeuristicExcelParser,
   localKeywordPricing,
-  localQSChatFallback
+  localQSChatFallback,
+  extractRoomFromDescription
 };

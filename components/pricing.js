@@ -418,28 +418,8 @@ class PricingComponent {
             this.rates.forEach(otherRate => {
                 if (otherRate.code === rate.code) return; // skip self
                 if (otherRate.section && otherRate.section.toLowerCase() === roomKey) {
-                    const unitLower = (otherRate.unit || '').toLowerCase().trim();
-                    const isM2 = unitLower === 'm2' || unitLower === 'sqm' || unitLower === 'm²' || unitLower === 'sq.m';
-                    const isM = unitLower === 'm' || unitLower === 'lm' || unitLower === 'linear' || unitLower === 'linear meter' || unitLower === 'l.m';
-                    
-                    let calculatedQty = 0;
-                    if (isM2) {
-                        const descLower = (otherRate.desc || '').toLowerCase();
-                        if (descLower.includes('ceiling') || descLower.includes('floor')) {
-                            calculatedQty = width * length;
-                        } else {
-                            calculatedQty = (height > 0) ? (2 * (width + length) * height) : (width * length);
-                        }
-                    } else if (isM) {
-                        const descLower = (otherRate.desc || '').toLowerCase();
-                        if (descLower.includes('skirting') || descLower.includes('perimeter') || descLower.includes('cornice')) {
-                            calculatedQty = 2 * (width + length);
-                        } else {
-                            calculatedQty = width + length;
-                        }
-                    }
-
-                    if (calculatedQty > 0) {
+                    const calculatedQty = app.calculateQuantityFromDimensions(otherRate.desc, otherRate.unit, width, length, height);
+                    if (calculatedQty !== null && calculatedQty > 0) {
                         otherRate.qty = parseFloat(calculatedQty.toFixed(2));
                         otherRate.current = (otherRate.materialRate || 0) + (otherRate.labourRate || 0) + (otherRate.plantRate || 0) + (otherRate.subRate || 0);
                         this.saveRateToBackend(otherRate);
