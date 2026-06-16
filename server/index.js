@@ -2497,28 +2497,11 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
         let currentSection = name || 'General';
 
         if (statusColIdx !== -1) {
-          let catColIdx = statusColIdx > 0 ? statusColIdx - 1 : -1;
-          let descColIdx = -1;
-          let maxLen = 0;
-          for (let c = statusColIdx + 1; c < 25; c++) {
-            let totalLen = 0;
-            let count = 0;
-            for (let r = 0; r < Math.min(rows.length, 100); r++) {
-              const row = rows[r];
-              if (row && row[c] !== undefined && row[c] !== null) {
-                totalLen += String(row[c]).length;
-                count++;
-              }
-            }
-            const avgLen = count > 0 ? totalLen / count : 0;
-            if (avgLen > maxLen) {
-              maxLen = avgLen;
-              descColIdx = c;
-            }
-          }
-          if (descColIdx === -1) {
-            descColIdx = statusColIdx + 1;
-          }
+          // Fixed checklist column mapping:
+          // Room = column A, Type = column B, Required Yes/No = column C, Further Information = column D
+          const roomColIdx = 0;
+          const catColIdx = 1;
+          const descColIdx = 3;
 
           console.log(`[Excel Pre-filter] Checklist sheet detected: "${name}". statusColIdx=${statusColIdx}, catColIdx=${catColIdx}, descColIdx=${descColIdx}`);
 
@@ -2539,8 +2522,8 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
 
             // Capture left-column room name only when it looks like an actual room/area.
             // Do NOT treat long descriptions, addresses, costs, or notes as room names.
-            if (row[0] && String(row[0]).trim().length > 1) {
-              const possibleSection = String(row[0]).trim();
+            if (row[roomColIdx] && String(row[roomColIdx]).trim().length > 1) {
+              const possibleSection = String(row[roomColIdx]).trim();
               const lowerSection = possibleSection.toLowerCase();
 
               const blockedSectionWords = [
@@ -2580,7 +2563,9 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
             const details = descColIdx !== -1 && row[descColIdx] ? String(row[descColIdx]).trim() : '';
             if (!details && !cat) continue;
 
-            const roomName = currentSection || 'General';
+            const roomName = row[roomColIdx] && String(row[roomColIdx]).trim()
+              ? String(row[roomColIdx]).trim()
+              : currentSection || 'General';
             const workType = cat || '';
             const furtherInfo = details || '';
 
