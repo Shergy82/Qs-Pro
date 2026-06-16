@@ -48,32 +48,32 @@ function getRetryDelayMs(error) {
 // Helper for resilient Gemini API calls with Exact Wait & Exponential Backoff
 async function generateContentWithRetry(params, retries = 8, delayMs = 2000) {
   if (!ai) throw new Error('Gemini API key is not configured.');
-  
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       return await ai.models.generateContent(params);
     } catch (error) {
       const errorMsg = error.message || '';
       const status = error.status || 0;
-      
-      const isTransientError = status === 429 || 
-                               status === 503 ||
-                               errorMsg.includes('429') || 
-                               errorMsg.includes('503') || 
-                               errorMsg.includes('Quota exceeded') ||
-                               errorMsg.includes('RESOURCE_EXHAUSTED') ||
-                               errorMsg.includes('UNAVAILABLE') ||
-                               errorMsg.includes('high demand') ||
-                               errorMsg.includes('limit exceeded') ||
-                               errorMsg.includes('spikes in demand');
-      
+
+      const isTransientError = status === 429 ||
+        status === 503 ||
+        errorMsg.includes('429') ||
+        errorMsg.includes('503') ||
+        errorMsg.includes('Quota exceeded') ||
+        errorMsg.includes('RESOURCE_EXHAUSTED') ||
+        errorMsg.includes('UNAVAILABLE') ||
+        errorMsg.includes('high demand') ||
+        errorMsg.includes('limit exceeded') ||
+        errorMsg.includes('spikes in demand');
+
       if (isTransientError && attempt < retries) {
         // First try to parse exact retryDelay from Google, else fall back to exponential backoff (capped at 30s)
         let sleepTime = getRetryDelayMs(error);
         if (!sleepTime) {
           sleepTime = Math.min(delayMs * Math.pow(2, attempt - 1), 30000);
         }
-        
+
         console.warn(`[Gemini API] Quota limit hit (429/RESOURCE_EXHAUSTED). Retrying attempt ${attempt}/${retries} in ${sleepTime}ms...`);
         await new Promise(resolve => setTimeout(resolve, sleepTime));
         continue;
@@ -138,7 +138,7 @@ function isInformationalOnly(descLower) {
 function normalizeDescription(description, section) {
   if (!description) return '';
   let clean = description.toLowerCase().trim();
-  
+
   // If section is provided, clean it
   if (section) {
     const secLower = section.toLowerCase().trim();
@@ -149,11 +149,11 @@ function normalizeDescription(description, section) {
       clean = clean.replace(/^[-\s:;,]+/g, '').trim();
     }
   }
-  
+
   const roomPrefixes = [
-    'lounge', 'kitchen', 'hall', 'stairs', 'landing', 'bedroom', 'bathroom', 
-    'sitting room', 'living room', 'dining room', 'wc', 'toilet', 'cupboard', 
-    'boiler cupboard', 'garden', 'front garden', 'rear garden', 'external', 
+    'lounge', 'kitchen', 'hall', 'stairs', 'landing', 'bedroom', 'bathroom',
+    'sitting room', 'living room', 'dining room', 'wc', 'toilet', 'cupboard',
+    'boiler cupboard', 'garden', 'front garden', 'rear garden', 'external',
     'externals', 'stairs and landing', 'entrance hall'
   ];
   for (const prefix of roomPrefixes) {
@@ -165,19 +165,19 @@ function normalizeDescription(description, section) {
       }
     }
   }
-  
+
   clean = clean.replace(/[.,;:()\-]+/g, ' ');
   clean = clean.replace(/\s+/g, ' ').trim();
-  
+
   return clean;
 }
 
 function extractRoomFromDescription(description, currentSection) {
   if (!description) return { room: currentSection || 'General', description: '' };
-  
+
   const originalDesc = description.trim();
   const descLower = originalDesc.toLowerCase();
-  
+
   // List of common rooms and their variations
   const roomPatterns = [
     { name: "Stairs & Landing - Boiler Cupboard", keywords: ["stairs and landing boiler cupboard", "stairs & landing boiler cupboard", "stairs and landing boiler cup'd", "stairs & landing boiler cup'd", "stairs and landing boiler cup", "stairs & landing boiler cup"] },
@@ -242,10 +242,10 @@ function extractRoomFromDescription(description, currentSection) {
       // If it doesn't match a known room, check if it's a trade or structural element keyword rather than a room
       const lowerPot = potentialRoom.toLowerCase();
       const elementKeywords = [
-        'ceiling', 'wall', 'floor', 'window', 'door', 'woodwork', 'radiator', 'fireplace', 
-        'additional', 'unit', 'appliance', 'skirting', 'lighting', 'light', 'plaster', 
-        'paint', 'decorat', 'services', 'demolition', 'groundwork', 'superstructure', 
-        'substructure', 'roof', 'chimney', 'electrical', 'plumbing', 'heating', 'carpentry', 
+        'ceiling', 'wall', 'floor', 'window', 'door', 'woodwork', 'radiator', 'fireplace',
+        'additional', 'unit', 'appliance', 'skirting', 'lighting', 'light', 'plaster',
+        'paint', 'decorat', 'services', 'demolition', 'groundwork', 'superstructure',
+        'substructure', 'roof', 'chimney', 'electrical', 'plumbing', 'heating', 'carpentry',
         'masonry', 'brickwork', 'spec', 'note', 'general', 'other'
       ];
       const isElement = elementKeywords.some(kw => lowerPot.includes(kw));
@@ -257,9 +257,9 @@ function extractRoomFromDescription(description, currentSection) {
 
   // 3. Check if description contains any of the room keywords in the first 40 characters
   // Only do this if currentSection is generic (like "General", "Unspecified")
-  const isGenericSection = !currentSection || 
+  const isGenericSection = !currentSection ||
     ['general', 'unspecified', 'unknown', 'sheet1', 'checklist', 'worksheet', 'estimation'].includes(currentSection.toLowerCase().trim());
-  
+
   if (isGenericSection) {
     for (const pattern of roomPatterns) {
       for (const kw of pattern.keywords) {
@@ -279,22 +279,22 @@ function localHeuristicExcelParser(filePath) {
   try {
     const workbook = XLSX.readFile(filePath);
     const items = [];
-    
+
     workbook.SheetNames.forEach(sheetName => {
       // Skip collection, summary, totals, index, instructions, or preliminaries sheets
       const nameLower = sheetName.toLowerCase();
-      if (nameLower.includes('collection') || 
-          nameLower.includes('summary') || 
-          nameLower.includes('total') || 
-          nameLower.includes('index') || 
-          nameLower.includes('instruction') || 
-          nameLower.includes('prelim')) {
+      if (nameLower.includes('collection') ||
+        nameLower.includes('summary') ||
+        nameLower.includes('total') ||
+        nameLower.includes('index') ||
+        nameLower.includes('instruction') ||
+        nameLower.includes('prelim')) {
         return;
       }
-      
+
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      
+
       let currentSection = sheetName || 'General';
 
       // Checklist / Scoping sheet detection
@@ -379,7 +379,7 @@ function localHeuristicExcelParser(filePath) {
           if (!details && !cat) continue;
 
           const combinedDesc = cat ? `${cat}: ${details}` : details;
-          
+
           if (isInformationalOnly(combinedDesc.toLowerCase())) {
             continue;
           }
@@ -405,13 +405,13 @@ function localHeuristicExcelParser(filePath) {
       let unitIdx = 2;
       let qtyIdx = 3;
       let rateIdx = 4;
-      
+
       // Dynamic header mapping
       let headerRowIdx = -1;
       for (let r = 0; r < Math.min(rows.length, 15); r++) {
         const row = rows[r];
         if (!row || !Array.isArray(row)) continue;
-        
+
         let foundDesc = false;
         row.forEach((cell, idx) => {
           if (!cell) return;
@@ -430,24 +430,24 @@ function localHeuristicExcelParser(filePath) {
           break;
         }
       }
-      
+
       const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
       for (let r = startRowIdx; r < rows.length; r++) {
         const row = rows[r];
         if (!row || !Array.isArray(row) || row.length === 0) continue;
-        
+
         // Clean and read description
         const descCell = row[descIdx];
         if (!descCell) continue;
         const description = String(descCell).trim();
         if (description.length < 5) continue;
-        
+
         // Skip header lines
         const descLower = description.toLowerCase();
         if (descLower.includes('description of works') || descLower.includes('description of work') || descLower.includes('item description')) {
           continue;
         }
-        
+
         // Skip purely informational specification clauses
         if (isInformationalOnly(descLower)) {
           continue;
@@ -458,11 +458,11 @@ function localHeuristicExcelParser(filePath) {
         const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
         const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
         const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
-        
+
         if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
           // Check if it's a continuation of the previous item
-          const looksLikeContinuation = 
-            description.trim().startsWith('•') || 
+          const looksLikeContinuation =
+            description.trim().startsWith('•') ||
             description.trim().startsWith('-') ||
             description.trim().startsWith('*') ||
             /^[a-z]/.test(description.trim()) ||
@@ -476,7 +476,7 @@ function localHeuristicExcelParser(filePath) {
           }
           continue;
         }
-        
+
         // Check if it's a sub-heading section
         const itemCell = row[itemIdx];
         const itemCode = itemCell ? String(itemCell).trim() : '';
@@ -484,7 +484,7 @@ function localHeuristicExcelParser(filePath) {
           currentSection = description;
           continue;
         }
-        
+
         // Parse quantity
         let quantity = null;
         const qtyCell = row[qtyIdx];
@@ -494,14 +494,14 @@ function localHeuristicExcelParser(filePath) {
             quantity = num;
           }
         }
-        
+
         // Parse unit
         let unit = 'Item';
         const unitCell = row[unitIdx];
         if (unitCell !== undefined && unitCell !== null && unitCell !== '') {
           unit = String(unitCell).trim();
         }
-        
+
         // Heuristics for quantity/unit from text if empty
         if (quantity === null) {
           const noMatch = description.match(/(\d+)\s*no\.?/i);
@@ -525,13 +525,13 @@ function localHeuristicExcelParser(filePath) {
             }
           }
         }
-        
+
         // Parse rate column if available
         let materialRate = 0;
         let labourRate = 0;
         let plantRate = 0;
         let subRate = 0;
-        
+
         const rateCell = row[rateIdx];
         if (rateCell !== undefined && rateCell !== null && rateCell !== '') {
           const num = Number(String(rateCell).replace(/[^0-9.-]/g, ''));
@@ -539,7 +539,7 @@ function localHeuristicExcelParser(filePath) {
             materialRate = num; // Start as material cost rate
           }
         }
-        
+
         const roomResult = extractRoomFromDescription(description, currentSection);
         items.push({
           section: roomResult.room,
@@ -553,7 +553,7 @@ function localHeuristicExcelParser(filePath) {
         });
       }
     });
-    
+
     console.log(`[Local Parser] Successfully parsed ${items.length} items locally using heuristic mapping.`);
     return items;
   } catch (err) {
@@ -565,7 +565,7 @@ function localHeuristicExcelParser(filePath) {
 function localKeywordPricing(items, libraryRates, labourRates, projectTradeCategory) {
   console.log(`[Local Pricing] Running local keyword-matching pricing engine for ${items.length} items...`);
   const pricedItems = [];
-  
+
   for (const item of items) {
     let materialRate = 0;
     let labourRate = 0;
@@ -577,14 +577,14 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
     let warnings = [];
     let assumptions = 'Priced using local estimating factors';
     let notes = '';
-    
+
     const desc = (item.description || '').toLowerCase();
     const section = (item.section || '').toLowerCase();
-    
+
     // 1. Try to match exact/partial words against custom library rates
     let bestLibraryMatch = null;
     let bestScore = 0;
-    
+
     for (const lib of libraryRates) {
       const libName = lib.name.toLowerCase();
       if (desc.includes(libName)) {
@@ -595,7 +595,7 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
         }
       }
     }
-    
+
     if (bestLibraryMatch) {
       materialRate = bestLibraryMatch.costRate;
       merchant = bestLibraryMatch.supplier || 'Travis Perkins';
@@ -662,7 +662,7 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
         assumptions = 'Subcontract trade specialist rate build-up';
       }
     }
-    
+
     // 3. Determine trade and estimate labour rate
     let trade = 'General labourer';
     if (desc.includes('plaster') || desc.includes('skim') || desc.includes('board') || section.includes('plaster')) {
@@ -684,11 +684,11 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
     } else if (desc.includes('demolition') || desc.includes('strip') || desc.includes('clearance') || section.includes('waste')) {
       trade = 'General labourer';
     }
-    
+
     // Find matched labour day rate
     const matchedLabour = labourRates.find(l => l.trade === trade);
     const dailyRate = matchedLabour ? matchedLabour.dailyRate : 220;
-    
+
     // Calculate labour unit cost based on unit and item quantity
     const unitStr = (item.unit || '').toLowerCase().trim();
     let daysPerUnit = 0.15; // default
@@ -701,13 +701,13 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
     } else if (unitStr === 'm3') {
       daysPerUnit = 0.5; // 2m3 per day
     }
-    
+
     if (subRate > 0) {
       labourRate = 0;
     } else {
       labourRate = parseFloat((dailyRate * daysPerUnit).toFixed(2));
     }
-    
+
     if (section.includes('prelim') || desc.includes('particular') || desc.includes('insurance')) {
       materialRate = 0;
       labourRate = 0;
@@ -717,14 +717,14 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
       confidence = 'Medium';
       assumptions = 'Preliminaries contract overhead allotment';
     }
-    
+
     // Zero-rate prevention fallback based on unit type
     if (materialRate === 0 && labourRate === 0 && plantRate === 0 && subRate === 0) {
       const cleanUnit = (item.unit || '').toLowerCase().trim();
       confidence = 'Low';
       merchant = 'Local Builders Merchant';
       assumptions = 'Offline fallback average UK cost rate based on item unit type';
-      
+
       if (cleanUnit === 'm2' || cleanUnit === 'sqm') {
         materialRate = 12.50;
         labourRate = 8.50;
@@ -748,7 +748,7 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
         assumptions += ' (lump-sum works allowance)';
       }
     }
-    
+
     pricedItems.push({
       id: item.id,
       materialRate,
@@ -763,7 +763,7 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
       notes
     });
   }
-  
+
   return pricedItems;
 }
 
@@ -851,7 +851,7 @@ app.post('/api/auth/register', async (req, res) => {
 
   try {
     const db = await getDbConnection();
-    
+
     // Check if email already exists
     const existingUser = await db.get('SELECT id FROM users WHERE email = ?', email);
     if (existingUser) {
@@ -1033,7 +1033,7 @@ app.post('/api/auth/logout', async (req, res) => {
       const db = await getDbConnection();
       await db.run('DELETE FROM sessions WHERE token = ?', token);
       await db.close();
-    } catch (e) {}
+    } catch (e) { }
   }
   res.json({ success: true });
 });
@@ -1093,12 +1093,12 @@ app.get('/api/rates', requireAuth, async (req, res) => {
 app.post('/api/rates', requireAuth, async (req, res) => {
   let { name, trade, unit, costRate, materialRate, labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated } = req.body;
   const id = crypto.randomUUID();
-  
+
   const mRate = parseFloat(materialRate) || 0;
   const lRate = parseFloat(labourRate) || 0;
   const pRate = parseFloat(plantRate) || 0;
   const sRate = parseFloat(subRate) || 0;
-  
+
   if (materialRate !== undefined || labourRate !== undefined || plantRate !== undefined || subRate !== undefined) {
     costRate = mRate + lRate + pRate + sRate;
   } else {
@@ -1133,12 +1133,12 @@ app.post('/api/rates', requireAuth, async (req, res) => {
 app.put('/api/rates/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   let { name, trade, unit, costRate, materialRate, labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated } = req.body;
-  
+
   const mRate = parseFloat(materialRate) || 0;
   const lRate = parseFloat(labourRate) || 0;
   const pRate = parseFloat(plantRate) || 0;
   const sRate = parseFloat(subRate) || 0;
-  
+
   if (materialRate !== undefined || labourRate !== undefined || plantRate !== undefined || subRate !== undefined) {
     costRate = mRate + lRate + pRate + sRate;
   } else {
@@ -1364,7 +1364,7 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
   } = req.body;
   try {
     const db = await getDbConnection();
-    
+
     // Verify ownership
     const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!project) {
@@ -1398,7 +1398,7 @@ app.delete('/api/projects/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
     const db = await getDbConnection();
-    
+
     // Verify ownership
     const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!project) {
@@ -1473,7 +1473,7 @@ app.get('/api/room-measurements/lookup', requireAuth, async (req, res) => {
       req.user.id
     );
     await db.close();
-    
+
     // De-duplicate room names, keeping the last one (most recent)
     const lookup = {};
     for (const row of rows) {
@@ -1496,7 +1496,7 @@ app.get('/api/projects/:id/estimates', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
     const db = await getDbConnection();
-    
+
     // Verify ownership
     const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!project) {
@@ -1506,7 +1506,7 @@ app.get('/api/projects/:id/estimates', requireAuth, async (req, res) => {
 
     const items = await db.all('SELECT * FROM estimate_items WHERE project_id = ?', id);
     await db.close();
-    
+
     // Map warnings JSON string to array, isAIIdentified boolean
     const mapped = items.map(item => {
       let parsedWarnings = [];
@@ -1535,7 +1535,7 @@ app.post('/api/estimate-items', requireAuth, async (req, res) => {
   const id = crypto.randomUUID();
   try {
     const db = await getDbConnection();
-    
+
     // Verify project ownership
     const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [project_id, req.user.id]);
     if (!project) {
@@ -1572,7 +1572,7 @@ app.put('/api/estimate-items/:id', requireAuth, async (req, res) => {
   } = req.body;
   try {
     const db = await getDbConnection();
-    
+
     // Verify item belongs to a project owned by this user
     const oldItem = await db.get(
       `SELECT e.project_id FROM estimate_items e 
@@ -1605,7 +1605,7 @@ app.put('/api/estimate-items/:id', requireAuth, async (req, res) => {
       const parsedPlant = parseFloat(plantRate) || 0;
       const parsedSub = parseFloat(subRate) || 0;
       const totalCostRate = parsedMat + parsedLab + parsedPlant + parsedSub;
-      
+
       const existingRate = await db.get(
         'SELECT id FROM rates WHERE user_id = ? AND LOWER(name) = ?',
         [req.user.id, normName.toLowerCase()]
@@ -1640,14 +1640,14 @@ app.put('/api/estimate-items/:id', requireAuth, async (req, res) => {
     }
 
     await recalculateProjectCost(db, oldItem.project_id);
-    
+
     // Get updated item
     const updatedItem = await db.get('SELECT * FROM estimate_items WHERE id = ?', id);
     let parsedWarnings = [];
     try {
       parsedWarnings = updatedItem.warnings ? JSON.parse(updatedItem.warnings) : [];
-    } catch(e) {}
-    
+    } catch (e) { }
+
     await db.close();
     res.json({
       ...updatedItem,
@@ -1663,7 +1663,7 @@ app.delete('/api/estimate-items/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
     const db = await getDbConnection();
-    
+
     // Verify item belongs to a project owned by this user
     const item = await db.get(
       `SELECT e.project_id FROM estimate_items e 
@@ -1692,7 +1692,7 @@ app.post('/api/projects/:id/reprice', requireAuth, async (req, res) => {
 
   try {
     const db = await getDbConnection();
-    
+
     // Verify ownership
     const project = await db.get('SELECT * FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
     if (!project) {
@@ -1765,7 +1765,7 @@ app.post('/api/projects/:id/reprice', requireAuth, async (req, res) => {
     let pricedFromGemini = [];
     if (unmatchedRepresentativeItems.length > 0) {
       console.log(`Sending ${unmatchedRepresentativeItems.length} unmatched representative items to Gemini...`);
-      
+
       const prompt = `You are a professional UK Senior Quantity Surveyor. Price the following list of construction work items:
 ${JSON.stringify(unmatchedRepresentativeItems.map(item => ({ id: item.id, description: item.description, quantity: item.quantity, unit: item.unit })))}
 
@@ -1844,7 +1844,7 @@ JSON format:
 
     for (const priced of pricedFromGemini) {
       if (!priced.id) continue;
-      
+
       const repItem = unmatchedRepresentativeItems.find(item => item.id === priced.id);
       if (!repItem) continue;
 
@@ -1959,7 +1959,7 @@ JSON format:
 // --- Scraper API ---
 app.post('/api/scrape', requireAuth, async (req, res) => {
   const { url } = req.body;
-  
+
   if (!url) {
     return res.status(400).json({ success: false, error: 'URL is required' });
   }
@@ -1982,9 +1982,9 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
   if (!description || !unit) {
     return res.status(400).json({ error: 'Description and Unit are required' });
   }
-  
+
   console.log(`[AI Price Suggest] Looking up cost for "${description}" (${unit})`);
-  
+
   const prompt = `You are a professional UK Senior Quantity Surveyor and construction pricing expert.
   Analyze the following item description and its unit of measurement:
   Description: "${description}"
@@ -2011,12 +2011,12 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
     "explanation": "string",
     "source": "string"
   }`;
-  
+
   try {
     if (!ai) {
       throw new Error('Gemini API key is not configured.');
     }
-    
+
     const response = await generateContentWithRetry({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -2024,37 +2024,37 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
         responseMimeType: 'application/json',
       }
     }, 3, 1500);
-    
+
     const data = JSON.parse(response.text);
-    
+
     // Safety check: Detect if the API returned a hardcoded mock response for a mismatched item description or mismatched unit type
     const isMockResponse = data.recommendedRate === 15.5 && data.source === 'BCIS Index 2026';
-    const isActualDecoration = description.toLowerCase().includes('paint') || 
-                               description.toLowerCase().includes('decorat') || 
-                               description.toLowerCase().includes('emulsion');
+    const isActualDecoration = description.toLowerCase().includes('paint') ||
+      description.toLowerCase().includes('decorat') ||
+      description.toLowerCase().includes('emulsion');
     const isExpectedUnit = unit.toLowerCase().includes('m2') || unit.toLowerCase().includes('sqm');
-                               
+
     if (isMockResponse && (!isActualDecoration || !isExpectedUnit)) {
       console.warn(`[AI Price Suggest] Mismatched mock response detected for "${description}" (${unit}). Falling back to local offline estimator...`);
       throw new Error("Mismatched mock response");
     }
-    
+
     res.json(data);
   } catch (err) {
     console.warn('[AI Price Suggest] Gemini API failed or not configured. Using local offline estimator...', err.message);
-    
+
     let minPrice = 15;
     let maxPrice = 35;
     let recommendedRate = 22;
     let explanation = `Based on average UK subcontracting rates, this item is estimated at standard regional prices. Includes standard labour hours and minor consumables.`;
     let source = `Offline Heuristics Cost Index`;
-    
+
     const descLower = description.toLowerCase();
     const unitLower = unit.toLowerCase().trim();
-    
+
     const isHourly = unitLower === 'hr' || unitLower === 'hour' || unitLower === 'hours';
     const isDaily = unitLower === 'day' || unitLower === 'days' || unitLower === 'daily';
-    
+
     if (isHourly) {
       if (descLower.includes('paint') || descLower.includes('decorat') || descLower.includes('emulsion')) {
         minPrice = 18.00;
@@ -2218,7 +2218,7 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
         source = `UK Joinery & Refurbishment Standard Hours`;
       }
     }
-    
+
     res.json({
       success: true,
       minPrice,
@@ -2288,11 +2288,11 @@ How can I assist you with your estimating project today? Ask me about:
 app.post('/api/chat', requireAuth, async (req, res) => {
   const { message, projectId } = req.body;
   let contextPrompt = '';
-  
+
   try {
     if (projectId) {
       const db = await getDbConnection();
-      
+
       // Verify project ownership
       const project = await db.get('SELECT * FROM projects WHERE id = ? AND user_id = ?', [projectId, req.user.id]);
       if (project) {
@@ -2404,18 +2404,18 @@ app.post('/api/projects/import', requireAuth, async (req, res) => {
       }
 
       await insertItem.run(
-        crypto.randomUUID(), 
-        projectId, 
-        item.section || 'General', 
-        combined || 'Unknown Item', 
-        item.quantity || 1, 
-        item.unit || 'Item', 
+        crypto.randomUUID(),
+        projectId,
+        item.section || 'General',
+        combined || 'Unknown Item',
+        item.quantity || 1,
+        item.unit || 'Item',
         0, 0, 0, 0, 1,
         'Medium', '[]', '', '', 'Identified from uploaded document', ''
       );
     }
     await insertItem.finalize();
-    
+
     // Dynamic recalculation
     await recalculateProjectCost(db, projectId);
 
@@ -2435,11 +2435,11 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
 
   try {
     const isExcel = req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-                    req.file.mimetype === 'application/vnd.ms-excel' ||
-                    req.file.mimetype === 'text/csv' ||
-                    req.file.originalname.toLowerCase().endsWith('.xlsx') ||
-                    req.file.originalname.toLowerCase().endsWith('.xls') ||
-                    req.file.originalname.toLowerCase().endsWith('.csv');
+      req.file.mimetype === 'application/vnd.ms-excel' ||
+      req.file.mimetype === 'text/csv' ||
+      req.file.originalname.toLowerCase().endsWith('.xlsx') ||
+      req.file.originalname.toLowerCase().endsWith('.xls') ||
+      req.file.originalname.toLowerCase().endsWith('.csv');
 
     let extractedItems = [];
 
@@ -2453,12 +2453,12 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
       workbook.SheetNames.forEach(name => {
         const nameLower = name.toLowerCase();
         // Skip collection, summary, totals, index, instructions, or preliminaries sheets
-        if (nameLower.includes('collection') || 
-            nameLower.includes('summary') || 
-            nameLower.includes('total') || 
-            nameLower.includes('index') || 
-            nameLower.includes('instruction') || 
-            nameLower.includes('prelim')) {
+        if (nameLower.includes('collection') ||
+          nameLower.includes('summary') ||
+          nameLower.includes('total') ||
+          nameLower.includes('index') ||
+          nameLower.includes('instruction') ||
+          nameLower.includes('prelim')) {
           console.log(`[Excel Analyzer] Skipping sheet: ${name}`);
           return;
         }
@@ -2552,11 +2552,28 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
             const details = descColIdx !== -1 && row[descColIdx] ? String(row[descColIdx]).trim() : '';
             if (!details && !cat) continue;
 
-            const roomResult = extractRoomFromDescription(details, currentSection);
+            const roomName = currentSection || 'General';
+            const workType = cat || '';
+            const furtherInfo = details || '';
+
+            let fullDescription = '';
+
+            if (workType && furtherInfo) {
+              fullDescription = `${workType}: ${furtherInfo}`;
+            } else if (workType) {
+              fullDescription = workType;
+            } else {
+              fullDescription = furtherInfo;
+            }
+
+            if (isInformationalOnly(fullDescription.toLowerCase())) {
+              continue;
+            }
+
             extractedItems.push({
-              section: roomResult.room,
-              category: cat,
-              description: roomResult.description,
+              section: roomName,
+              category: workType,
+              description: fullDescription,
               status: isSelected ? 'Yes' : 'No',
               selected: isSelected,
               quantity: 1,
@@ -2710,11 +2727,11 @@ ${excelText}`
               });
             }
           });
-          try { fs.unlinkSync(req.file.path); } catch (e) {}
+          try { fs.unlinkSync(req.file.path); } catch (e) { }
         }
       } else {
         // All sheets were checklists and parsed locally! Just delete the uploaded file
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        try { fs.unlinkSync(req.file.path); } catch (e) { }
       }
 
     } else {
@@ -2729,7 +2746,7 @@ ${excelText}`
         });
 
         console.log(`File uploaded. URI: ${uploadResult.uri}. Analyzing...`);
-        
+
         const prompt = `You are an expert UK Quantity Surveyor. Analyze this construction document (schedule of works, specification, or priced Bill of Quantities).
 Extract all distinct priced work items, quantities, and units. Do not hallucinate prices.
 Map each item into our exact JSON array structure.
@@ -2762,7 +2779,7 @@ Structure for each object:
           }
         }, 2, 1000); // 2 attempts max, 1s delay -> fail fast instantly
 
-        try { await ai.files.delete({ name: uploadResult.name }); } catch(e) {}
+        try { await ai.files.delete({ name: uploadResult.name }); } catch (e) { }
         const rawItems = JSON.parse(response.text);
         extractedItems = rawItems.map(item => {
           const roomResult = extractRoomFromDescription(item.description || '', item.section || 'General');
@@ -2778,7 +2795,7 @@ Structure for each object:
         });
         fs.unlinkSync(req.file.path);
       } catch (geminiError) {
-        try { fs.unlinkSync(req.file.path); } catch (e) {}
+        try { fs.unlinkSync(req.file.path); } catch (e) { }
         throw new Error('Gemini API file analysis failed: ' + geminiError.message);
       }
     }
