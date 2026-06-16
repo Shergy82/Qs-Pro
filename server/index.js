@@ -2537,14 +2537,42 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
               }
             }
 
-            // Capture left-column section name if present
-            if (row[0] && String(row[0]).trim().length > 3) {
+            // Capture left-column room name only when it looks like an actual room/area.
+            // Do NOT treat long descriptions, addresses, costs, or notes as room names.
+            if (row[0] && String(row[0]).trim().length > 1) {
               const possibleSection = String(row[0]).trim();
-              if (possibleSection.toLowerCase() !== 'yes' && possibleSection.toLowerCase() !== 'no') {
+              const lowerSection = possibleSection.toLowerCase();
+
+              const blockedSectionWords = [
+                'address',
+                'cost',
+                'duration',
+                'capital expenditure',
+                'compliance',
+                'allow for',
+                'asbestos survey',
+                'asbestos abatement',
+                'management plan',
+                'retest',
+                'capital',
+                'break down',
+                'breakdown',
+                'works shall',
+                'shall include'
+              ];
+
+              const looksBlocked = blockedSectionWords.some(word => lowerSection.includes(word));
+              const tooLongForRoom = possibleSection.length > 45;
+
+              if (
+                !looksBlocked &&
+                !tooLongForRoom &&
+                lowerSection !== 'yes' &&
+                lowerSection !== 'no'
+              ) {
                 currentSection = possibleSection;
               }
             }
-
             const status = String(row[statusColIdx] || '').trim().toLowerCase();
             const isSelected = (status === 'yes' || status === 'y' || status === 'true' || status === '1');
 

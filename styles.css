@@ -2034,3 +2034,28 @@ select option {
     overflow-wrap: anywhere;
     word-break: break-word;
 }
+
+#import-preview-modal .modal-content {
+    height: calc(100vh - 40px) !important;
+    max-height: calc(100vh - 40px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+#import-preview-modal .modal-body,
+#import-preview-modal [id^="import-wizard-step"] {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    padding-bottom: 24px !important;
+}
+
+#import-preview-modal .modal-footer,
+#import-wizard-footer-buttons {
+    flex-shrink: 0 !important;
+    position: relative !important;
+    background: var(--bg-secondary) !important;
+    border-top: 1px solid var(--border-color) !important;
+    padding: 16px 0 0 0 !important;
+    z-index: 5 !important;
+}
