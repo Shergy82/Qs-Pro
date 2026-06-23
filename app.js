@@ -927,8 +927,12 @@ class QSProApp {
                     throw new Error('Raw file reference missing.');
                 }
 
+                const parserSelect = document.getElementById('select-parser-version');
+                const parserVersion = parserSelect ? parserSelect.value : 'legacy';
+
                 const formData = new FormData();
                 formData.append('file', rawFile);
+                formData.append('parserVersion', parserVersion);
 
                 const result = await this.apiFetch('/api/analyze-document', {
                     method: 'POST',

@@ -246,10 +246,18 @@
                                 <h3>Uploaded Tender Packages</h3>
                                 <span class="badge badge-gray" id="uploaded-count">0 Files</span>
                             </div>
-                            <button class="btn btn-primary" id="btn-process-files" disabled>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-                                <span>Run AI Classification</span>
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <select id="select-parser-version" class="form-select text-xs" style="width: 220px; height: 38px; padding: 6px 12px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-primary);">
+                                    <option value="auto" selected>Auto-Detect Structure (Recommended)</option>
+                                    <option value="legacy">Default Checklist (Legacy)</option>
+                                    <option value="gentleshaw_excel">Gentleshaw Lane Scope of Works</option>
+                                    <option value="rose_cottage_pdf">Rose Cottage PDF Schedule</option>
+                                </select>
+                                <button class="btn btn-primary" id="btn-process-files" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+                                    <span>Run AI Classification</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="file-table-container">
                             <table class="file-table">

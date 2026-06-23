@@ -9,6 +9,8 @@ const { GoogleGenAI } = require('@google/genai');
 const { scrapePrice } = require('./scraper');
 const { getDbConnection, initDb, hashPassword, seedUserScope } = require('./database');
 const XLSX = require('xlsx');
+const { parserRegistry } = require('./parsers');
+const { isInformationalOnly, normalizeDescription, extractRoomFromDescription } = require('./utils');
 
 const app = express();
 const PORT = 3001;
@@ -83,196 +85,7 @@ async function generateContentWithRetry(params, retries = 8, delayMs = 2000) {
   }
 }
 
-function isInformationalOnly(descLower) {
-  const specIndicators = [
-    'all materials shall be',
-    'workmanship',
-    'in compliance with',
-    'found to be faulty',
-    'replaced like for like',
-    'shall be of approved',
-    'shall be used for making good',
-    'maker\'s instructions',
-    'manufacturer\'s instructions',
-    'manufacturers instructions',
-    'general workmanship',
-    'workmanship shall',
-    'specification of materials',
-    'for information only',
-    'putty to bs',
-    'bitumastic solution',
-    'shall be in accordance',
-    'to be in accordance with bs',
-    'standard standards',
-    'evidence of registration',
-    'ce marked in accordance',
-    'will be supplied by',
-    'materials shall be',
-    'is to be dulux',
-    'paint for internal',
-    'maker\'s name',
-    'makers name',
-    'sealed containers',
-    'pink primer',
-    'sadolin',
-    'bitumastic shall be',
-    'putty for woodwork'
-  ];
-
-  for (const indicator of specIndicators) {
-    if (descLower.includes(indicator)) {
-      return true;
-    }
-  }
-
-  if (descLower.includes('electrical works') && descLower.includes('in accordance')) {
-    return true;
-  }
-  if (descLower.includes('paint for internal') && descLower.includes('dulux')) {
-    return true;
-  }
-
-  return false;
-}
-
-function normalizeDescription(description, section) {
-  if (!description) return '';
-  let clean = description.toLowerCase().trim();
-
-  // If section is provided, clean it
-  if (section) {
-    const secLower = section.toLowerCase().trim();
-    if (secLower && secLower !== 'general' && secLower !== 'unspecified') {
-      if (clean.startsWith(secLower)) {
-        clean = clean.substring(secLower.length).trim();
-      }
-      clean = clean.replace(/^[-\s:;,]+/g, '').trim();
-    }
-  }
-
-  const roomPrefixes = [
-    'lounge', 'kitchen', 'hall', 'stairs', 'landing', 'bedroom', 'bathroom',
-    'sitting room', 'living room', 'dining room', 'wc', 'toilet', 'cupboard',
-    'boiler cupboard', 'garden', 'front garden', 'rear garden', 'external',
-    'externals', 'stairs and landing', 'entrance hall'
-  ];
-  for (const prefix of roomPrefixes) {
-    if (clean.startsWith(prefix)) {
-      let temp = clean.substring(prefix.length).trim();
-      temp = temp.replace(/^[-\s:;,]+/g, '').trim();
-      if (temp.length > 3) {
-        clean = temp;
-      }
-    }
-  }
-
-  clean = clean.replace(/[.,;:()\-]+/g, ' ');
-  clean = clean.replace(/\s+/g, ' ').trim();
-
-  return clean;
-}
-
-function extractRoomFromDescription(description, currentSection) {
-  if (!description) return { room: currentSection || 'General', description: '' };
-
-  const originalDesc = description.trim();
-  const descLower = originalDesc.toLowerCase();
-
-  // List of common rooms and their variations
-  const roomPatterns = [
-    { name: "Stairs & Landing - Boiler Cupboard", keywords: ["stairs and landing boiler cupboard", "stairs & landing boiler cupboard", "stairs and landing boiler cup'd", "stairs & landing boiler cup'd", "stairs and landing boiler cup", "stairs & landing boiler cup"] },
-    { name: "Stairs and Landing", keywords: ["stairs and landing", "stairs & landing", "stairs/landing"] },
-    { name: "Boiler Cupboard", keywords: ["boiler cupboard", "boiler cup'd", "boiler cupboard/store", "boiler cupboard / store", "boiler cup", "boiler cupd"] },
-    { name: "Lounge", keywords: ["lounge", "living room", "sitting room", "reception room", "reception"] },
-    { name: "Kitchen/Diner", keywords: ["kitchen/diner", "kitchen & diner", "kitchen diner"] },
-    { name: "Kitchen", keywords: ["kitchen"] },
-    { name: "Dining Room", keywords: ["dining room", "dining"] },
-    { name: "Bedroom 1", keywords: ["bedroom 1", "bed 1", "master bedroom"] },
-    { name: "Bedroom 2", keywords: ["bedroom 2", "bed 2"] },
-    { name: "Bedroom 3", keywords: ["bedroom 3", "bed 3"] },
-    { name: "Bedroom 4", keywords: ["bedroom 4", "bed 4"] },
-    { name: "Bedroom", keywords: ["bedroom"] },
-    { name: "Bathroom", keywords: ["bathroom", "bath room"] },
-    { name: "Ensuite", keywords: ["ensuite", "en-suite", "en suite"] },
-    { name: "WC", keywords: ["wc", "cloakroom", "toilet"] },
-    { name: "Entrance Hall", keywords: ["entrance hall", "hallway", "hall", "lobby"] },
-    { name: "Landing", keywords: ["landing"] },
-    { name: "Utility Room", keywords: ["utility room", "utility"] },
-    { name: "Store", keywords: ["store room", "store", "cupboard", "walk-in cupboard"] },
-    { name: "Garage", keywords: ["garage"] },
-    { name: "Garden", keywords: ["garden", "patio", "backyard", "yard"] },
-    { name: "External", keywords: ["external works", "external", "roof", "chimney", "elevation", "outside", "outbuilding"] }
-  ];
-
-  // 1. Check if the description starts with a known room name pattern
-  for (const pattern of roomPatterns) {
-    for (const kw of pattern.keywords) {
-      const escapedKw = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp('^' + escapedKw + '\\b', 'i');
-      if (regex.test(descLower)) {
-        let rest = originalDesc.substring(kw.length).trim();
-        rest = rest.replace(/^[:\-\s,]+/, '').trim();
-        if (rest) {
-          rest = rest.charAt(0).toUpperCase() + rest.slice(1);
-        } else {
-          rest = originalDesc;
-        }
-        return { room: pattern.name, description: rest };
-      }
-    }
-  }
-
-  // 2. Fallback to check if a prefix like "Lounge - Paint Ceiling" exists with colon/hyphen
-  const prefixMatch = originalDesc.match(/^([a-zA-Z0-9\s&\/]+?)\s*[:\-]\s*(.*)$/);
-  if (prefixMatch) {
-    const potentialRoom = prefixMatch[1].trim();
-    const rest = prefixMatch[2].trim();
-    if (potentialRoom.split(/\s+/).length <= 3 && potentialRoom.length > 2 && potentialRoom.length < 30) {
-      let roomMatched = null;
-      for (const pattern of roomPatterns) {
-        if (pattern.keywords.some(kw => potentialRoom.toLowerCase() === kw || potentialRoom.toLowerCase().includes(kw))) {
-          roomMatched = pattern.name;
-          break;
-        }
-      }
-      if (roomMatched) {
-        return { room: roomMatched, description: rest };
-      }
-
-      // If it doesn't match a known room, check if it's a trade or structural element keyword rather than a room
-      const lowerPot = potentialRoom.toLowerCase();
-      const elementKeywords = [
-        'ceiling', 'wall', 'floor', 'window', 'door', 'woodwork', 'radiator', 'fireplace',
-        'additional', 'unit', 'appliance', 'skirting', 'lighting', 'light', 'plaster',
-        'paint', 'decorat', 'services', 'demolition', 'groundwork', 'superstructure',
-        'substructure', 'roof', 'chimney', 'electrical', 'plumbing', 'heating', 'carpentry',
-        'masonry', 'brickwork', 'spec', 'note', 'general', 'other'
-      ];
-      const isElement = elementKeywords.some(kw => lowerPot.includes(kw));
-      if (!isElement) {
-        return { room: potentialRoom.charAt(0).toUpperCase() + potentialRoom.slice(1).toLowerCase(), description: rest };
-      }
-    }
-  }
-
-  // 3. Check if description contains any of the room keywords in the first 40 characters
-  // Only do this if currentSection is generic (like "General", "Unspecified")
-  const isGenericSection = !currentSection ||
-    ['general', 'unspecified', 'unknown', 'sheet1', 'checklist', 'worksheet', 'estimation'].includes(currentSection.toLowerCase().trim());
-
-  if (isGenericSection) {
-    for (const pattern of roomPatterns) {
-      for (const kw of pattern.keywords) {
-        const idx = descLower.indexOf(kw);
-        if (idx !== -1 && idx < 40) {
-          return { room: pattern.name, description: originalDesc };
-        }
-      }
-    }
-  }
-
-  return { room: currentSection || 'General', description: originalDesc };
-}
+// Utility functions are imported from `./utils.js` above
 
 function localHeuristicExcelParser(filePath) {
   console.log('[Local Parser] Running robust local heuristic fallback parser...');
@@ -1757,8 +1570,33 @@ app.post('/api/projects/:id/reprice', requireAuth, async (req, res) => {
           });
         }
       } else {
-        // No match: select the first item as representative to send to Gemini
-        unmatchedRepresentativeItems.push(groupItems[0]);
+        // No match in Price Book: check if the representative item has existing rates
+        const representative = groupItems[0];
+        const hasExistingRates = (representative.materialRate || 0) > 0 ||
+                                 (representative.labourRate || 0) > 0 ||
+                                 (representative.plantRate || 0) > 0 ||
+                                 (representative.subRate || 0) > 0;
+        
+        if (hasExistingRates) {
+          for (const item of groupItems) {
+            matchedPricedItems.push({
+              id: item.id,
+              materialRate: item.materialRate || 0,
+              labourRate: item.labourRate || 0,
+              plantRate: item.plantRate || 0,
+              subRate: item.subRate || 0,
+              merchant: item.merchant || '',
+              productUrl: item.productUrl || '',
+              confidence: item.confidence || 'Medium',
+              warnings: typeof item.warnings === 'string' ? JSON.parse(item.warnings || '[]') : (item.warnings || []),
+              assumptions: item.assumptions || 'Preserved existing rates',
+              notes: item.notes || ''
+            });
+          }
+        } else {
+          // No match and no existing rates: select as representative to send to Gemini
+          unmatchedRepresentativeItems.push(representative);
+        }
       }
     }
 
@@ -1824,7 +1662,7 @@ JSON format:
           pricedFromGemini = localKeywordPricing(unmatchedRepresentativeItems, libraryRates, labourRates, project.tradeCategory);
         } else {
           const response = await generateContentWithRetry({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.5-flash',
             contents: prompt,
             config: {
               responseMimeType: 'application/json',
@@ -2018,7 +1856,7 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
     }
 
     const response = await generateContentWithRetry({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -2317,7 +2155,7 @@ ${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quanti
     }
 
     const response = await generateContentWithRetry({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: message,
       config: {
         systemInstruction: `You are an expert UK Senior Quantity Surveyor and Cost Estimator assistant. Help the user with construction pricing, methodologies, risks, and regulations. Keep your answers very concise, professional, and actionable. ${contextPrompt}`
@@ -2410,8 +2248,17 @@ app.post('/api/projects/import', requireAuth, async (req, res) => {
         combined || 'Unknown Item',
         item.quantity || 1,
         item.unit || 'Item',
-        0, 0, 0, 0, 1,
-        'Medium', '[]', '', '', 'Identified from uploaded document', ''
+        item.labourRate || 0,
+        item.materialRate || 0,
+        item.plantRate || 0,
+        item.subRate || 0,
+        1,
+        item.confidence || 'Medium',
+        item.warnings ? (typeof item.warnings === 'string' ? item.warnings : JSON.stringify(item.warnings)) : '[]',
+        item.merchant || '',
+        item.productUrl || '',
+        item.assumptions || 'Identified from uploaded document',
+        item.notes || ''
       );
     }
     await insertItem.finalize();
@@ -2434,6 +2281,47 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
 
   try {
+    const parserVersion = req.body.parserVersion || 'legacy';
+    console.log(`[Document Analyzer] Requested parser version: ${parserVersion}`);
+
+    let selectedStrategy = null;
+    if (parserVersion === 'auto') {
+      const isExcel = req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        req.file.mimetype === 'application/vnd.ms-excel' ||
+        req.file.mimetype === 'text/csv' ||
+        req.file.originalname.toLowerCase().endsWith('.xlsx') ||
+        req.file.originalname.toLowerCase().endsWith('.xls') ||
+        req.file.originalname.toLowerCase().endsWith('.csv');
+
+      let workbook = null;
+      if (isExcel) {
+        try { workbook = XLSX.readFile(req.file.path); } catch (e) {}
+      }
+
+      for (const [id, strategy] of Object.entries(parserRegistry)) {
+        if (typeof strategy.detect === 'function') {
+          try {
+            if (strategy.detect(req.file, workbook)) {
+              selectedStrategy = strategy;
+              console.log(`[Document Analyzer] Auto-detected parser strategy: ${id} (${strategy.name})`);
+              break;
+            }
+          } catch (e) {
+            console.warn(`[Document Analyzer] Detection failed for strategy ${id}:`, e);
+          }
+        }
+      }
+    } else if (parserRegistry[parserVersion]) {
+      selectedStrategy = parserRegistry[parserVersion];
+    }
+
+    if (selectedStrategy) {
+      console.log(`[Document Analyzer] Running strategy parser: ${selectedStrategy.name}...`);
+      const items = await selectedStrategy.parse(req.file.path, req.file.mimetype, req.file.originalname);
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.json({ success: true, filename: req.file.originalname, items });
+    }
+
     const isExcel = req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       req.file.mimetype === 'application/vnd.ms-excel' ||
       req.file.mimetype === 'text/csv' ||
@@ -2679,7 +2567,7 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
         console.log('Sending pre-filtered Excel contents to Gemini...');
         try {
           const response = await generateContentWithRetry({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.5-flash',
             contents: [
               `You are an expert UK Quantity Surveyor. Analyze this uploaded construction spreadsheet data.
 Extract all distinct priced work items, quantities, and units. Do not hallucinate prices.
@@ -2761,28 +2649,27 @@ ${excelText}`
         console.log(`File uploaded. URI: ${uploadResult.uri}. Analyzing...`);
 
         const prompt = `You are an expert UK Quantity Surveyor. Analyze this construction document (schedule of works, specification, or priced Bill of Quantities).
-Extract all distinct priced work items, quantities, and units. Do not hallucinate prices.
+Extract all distinct work items, preliminaries, general items, and priced tasks. Do not hallucinate prices.
 Map each item into our exact JSON array structure.
 You must return a valid JSON array of objects. Do not wrap it in markdown block quotes (no \`\`\`json). Just the raw JSON array.
 
 Strict Extraction Rules:
-1. You MUST extract all room-by-room items, including all items in the "General Items" or "Removal" area at the end of the rooms list (e.g. "Remove and dispose pallets at the bottom of the garden"). Do not truncate or stop early.
-2. You MUST extract all physical work items from the Schedule of Rates (SOR) / priced Bill of Quantities (BOQ) section at the end of the document (items 49 to 82).
-3. Do NOT extract purely informational specification clauses (e.g., standard guidelines like "All materials shall be of approved manufacture", "Paint for external use shall be oil based", "All primers undercoats and gloss paints will be supplied by same manufacturer").
-4. However, you MUST extract any item in the SOR/BOQ section that represents an actual physical task, work item, or repair to be done (e.g., "Any asbestos guttering...", "General Workmanship (External Repairs)", "Painting", "Touch up and Make Good", "Inspect Gutters and Downpipes", "Cracked or Broken Glass Putty", "Painting and Preparation of Surfaces", "Roof Overhauls", "Floorcoverings - all carpets...", "Linoleum - all linoleum...", "All failed double glazing units...", "Taps and other bathroom fittings...", "Door furniture...", "Cookers found to be faulty...", "Curtain rails...", "Gas/Oil/Solid Fuel Remedials*", "Gas safety and service...").
-5. In the SOR/BOQ section, do NOT extract items that have a rate, price, or cost of 0 or 0.00 in the document (like items 49-54, 65-67, and 79). Only extract actual work tasks with non-zero pricing/rates (e.g. items 55, 57, 59-62, 64, 68-72, 74, 75, 77, 78, 81, 82).
-6. For each item, specify the section (use the room name or sheet name, e.g. "Entrance Hall", "Kitchen", "External Works / SOR", "Internal Works / SOR"), the description, the quantity, and the unit.
+1. You MUST extract all room-by-room items, including all items in the "General Items" or "Removal" area at the end of the rooms list. Do not truncate or stop early.
+2. You MUST extract all physical work items from the Schedule of Rates (SOR) / priced Bill of Quantities (BOQ) section at the end of the document.
+3. Extract all Preliminaries or General Items that represent a task, requirement, or allowance (e.g. disposing of debris, builders works, safety checks, scaffolding, or general obligations). Do not skip them just because their rate, price, quantity, or unit columns are blank in the document; use quantity 1 and unit "Item" (or Nr/Sum) if unspecified.
+4. Only ignore purely descriptive text that contains no requirements, safety obligations, or priced work.
+5. For each item, specify the section (use the room name, sheet name, or section title, e.g. "Entrance Hall", "Kitchen", "External Works", "Preliminaries"), the description, the quantity, and the unit.
 
 Structure for each object:
 {
-  "section": "String (e.g. Substructure, Joinery)",
-  "description": "String (Clear description of work)",
+  "section": "String (e.g. Preliminaries, External - Roof, Substructure)",
+  "description": "String (Clear description of work or requirement)",
   "quantity": Number,
   "unit": "String (m, m2, m3, Item, Nr)"
 }`;
 
         const response = await generateContentWithRetry({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.5-flash',
           contents: [
             { fileData: { mimeType: uploadResult.mimeType, fileUri: uploadResult.uri } },
             prompt
