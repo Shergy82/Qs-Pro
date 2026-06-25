@@ -1662,7 +1662,7 @@ JSON format:
           pricedFromGemini = localKeywordPricing(unmatchedRepresentativeItems, libraryRates, labourRates, project.tradeCategory);
         } else {
           const response = await generateContentWithRetry({
-            model: 'gemini-3.5-flash',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
               responseMimeType: 'application/json',
@@ -1856,7 +1856,7 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
     }
 
     const response = await generateContentWithRetry({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -2155,7 +2155,7 @@ ${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quanti
     }
 
     const response = await generateContentWithRetry({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: message,
       config: {
         systemInstruction: `You are an expert UK Senior Quantity Surveyor and Cost Estimator assistant. Help the user with construction pricing, methodologies, risks, and regulations. Keep your answers very concise, professional, and actionable. ${contextPrompt}`
@@ -2567,7 +2567,7 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
         console.log('Sending pre-filtered Excel contents to Gemini...');
         try {
           const response = await generateContentWithRetry({
-            model: 'gemini-3.5-flash',
+            model: 'gemini-2.5-flash',
             contents: [
               `You are an expert UK Quantity Surveyor. Analyze this uploaded construction spreadsheet data.
 Extract all distinct priced work items, quantities, and units. Do not hallucinate prices.
@@ -2669,7 +2669,7 @@ Structure for each object:
 }`;
 
         const response = await generateContentWithRetry({
-          model: 'gemini-3.5-flash',
+          model: 'gemini-2.5-flash',
           contents: [
             { fileData: { mimeType: uploadResult.mimeType, fileUri: uploadResult.uri } },
             prompt

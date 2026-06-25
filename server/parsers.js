@@ -247,7 +247,7 @@ Structure for each object:
 }`;
 
       const response = await generateContentWithRetry({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-2.5-flash',
         contents: [
           { fileData: { mimeType: uploadResult.mimeType, fileUri: uploadResult.uri } },
           prompt

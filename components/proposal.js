@@ -51,6 +51,45 @@ class ProposalComponent {
     }
 
     render() {
+        // Auto-populate defaults if not set or default
+        const companyInput = document.getElementById('proposal-company-name');
+        const contactInput = document.getElementById('proposal-contact-person');
+        const refInput = document.getElementById('proposal-reference');
+
+        if (companyInput && (!companyInput.value || companyInput.value === 'Apex Builders Ltd')) {
+            companyInput.value = (app.state.user && app.state.user.companyName) || 'GVD Contracts';
+        }
+        if (contactInput && (!contactInput.value || contactInput.value === 'Phil Estimator')) {
+            contactInput.value = (app.state.user && app.state.user.estimatorName) || 'Phil Shergold';
+        }
+
+        if (refInput && (!refInput.value || refInput.value === 'TEN-2026-042' || refInput.value.startsWith('TEN-2026-042'))) {
+            const activeWorkspace = app.state.workspaces.find(w => String(w.id) === String(app.state.activeWorkspaceId));
+            if (activeWorkspace) {
+                let cleanName = activeWorkspace.name
+                    .replace(/ - AI Take-off/gi, '')
+                    .replace(/Schedule of Works/gi, '')
+                    .replace(/Works/gi, '')
+                    .replace(/Specification/gi, '')
+                    .replace(/Quote/gi, '')
+                    .replace(/Tender/gi, '')
+                    .trim();
+                
+                if (cleanName.includes('-')) {
+                    cleanName = cleanName.split('-')[0].trim();
+                }
+                if (cleanName.includes('_')) {
+                    cleanName = cleanName.split('_')[0].trim();
+                }
+                if (cleanName.length === 0) {
+                    cleanName = 'TENDER';
+                }
+
+                const randomNum = Math.floor(100 + Math.random() * 900);
+                refInput.value = `TEN-${cleanName.replace(/\s+/g, '-').toUpperCase()}-${randomNum}`;
+            }
+        }
+
         this.syncInputsToPreview();
         this.renderBreakdownTable();
         this.generateAIVeOpportunities();

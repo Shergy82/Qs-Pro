@@ -47,7 +47,11 @@ class QSProApp {
             path = `/${path}`;
         }
 
-        return `${window.location.origin}${path}`;
+        const backendOrigin = window.location.origin.includes('3001')
+            ? window.location.origin
+            : 'http://localhost:3001';
+
+        return `${backendOrigin}${path}`;
     }
 
     async apiFetch(url, options = {}) {

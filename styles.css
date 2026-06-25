@@ -1831,16 +1831,34 @@ tr:hover td {
 @media print {
 
     /* Hide all layout elements */
-    .app-container,
     .sidebar,
     .topbar,
-    .proposal-sidebar,
+    .proposal-settings,
     .form-container,
     button,
     .icon-button,
     .badge,
     .modal-overlay {
         display: none !important;
+    }
+
+    /* Reset container constraints for print formatting */
+    .app-container,
+    .main-content,
+    .panel,
+    .proposal-container,
+    .proposal-preview,
+    .document-container-preview {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+        background: transparent !important;
+        border: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
     }
 
     /* Ensure only the print sheet content takes up the full width */
