@@ -1853,6 +1853,7 @@ tr:hover td {
         display: block !important;
         position: static !important;
         width: 100% !important;
+        max-width: none !important;
         height: auto !important;
         overflow: visible !important;
         background: transparent !important;
