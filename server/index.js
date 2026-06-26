@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { GoogleGenAI } = require('@google/genai');
 const { scrapePrice } = require('./scraper');
 const { getDbConnection, initDb, hashPassword, seedUserScope } = require('./database');
