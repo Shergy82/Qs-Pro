@@ -47,9 +47,15 @@ class QSProApp {
             path = `/${path}`;
         }
 
-        const backendOrigin = window.location.origin.includes('3001')
-            ? window.location.origin
-            : 'http://localhost:3001';
+        let backendOrigin = window.location.origin;
+
+        // If running locally on a different dev server port or via file protocol, point to localhost:3001
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const isFileProtocol = window.location.protocol === 'file:';
+
+        if ((isLocalhost && window.location.port !== '3001') || isFileProtocol) {
+            backendOrigin = 'http://localhost:3001';
+        }
 
         return `${backendOrigin}${path}`;
     }
