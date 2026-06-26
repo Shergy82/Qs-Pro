@@ -773,6 +773,21 @@
                                 </label>
                             </div>
 
+                            <div class="border-t pt-4 space-y-3" id="proposal-markup-container">
+                                <div class="flex items-center justify-between">
+                                    <label class="form-label mb-0" for="slider-proposal-markup">Rate Markup / Uplift (%)</label>
+                                    <span class="value-highlight font-bold text-sm text-emerald" id="lbl-proposal-markup-val">0.0%</span>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <input type="range" id="slider-proposal-markup" min="0" max="50" step="0.5" value="0" class="form-range flex-1">
+                                    <input type="number" id="input-proposal-markup" min="0" max="100" step="0.1" value="0" class="form-input text-center font-bold" style="width: 80px; padding: 4px 8px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); background-color: var(--bg-tertiary); color: var(--text-primary);">
+                                </div>
+                                <label class="flex items-center gap-2 cursor-pointer mt-2">
+                                    <input type="checkbox" id="chk-apply-markup-to-rates" checked class="form-checkbox">
+                                    <span>Distribute markup directly into schedule rates</span>
+                                </label>
+                            </div>
+
                             <button type="button" class="btn btn-primary w-full mt-6" id="btn-print-proposal">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                                 <span>Generate Proposal PDF</span>

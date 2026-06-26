@@ -48,9 +48,59 @@ class ProposalComponent {
         document.getElementById('btn-print-proposal').addEventListener('click', () => {
             window.print();
         });
+
+        // Markup controls event listeners
+        const sliderMarkup = document.getElementById('slider-proposal-markup');
+        const inputMarkup = document.getElementById('input-proposal-markup');
+        const chkApplyMarkup = document.getElementById('chk-apply-markup-to-rates');
+
+        if (sliderMarkup && inputMarkup) {
+            sliderMarkup.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value) || 0;
+                inputMarkup.value = val.toFixed(1);
+                document.getElementById('lbl-proposal-markup-val').innerText = val.toFixed(1) + '%';
+                if (app.state.activeWorkspaceId) {
+                    localStorage.setItem(`proposal_markup_${app.state.activeWorkspaceId}`, val);
+                }
+                this.renderBreakdownTable();
+            });
+
+            inputMarkup.addEventListener('input', (e) => {
+                let val = parseFloat(e.target.value) || 0;
+                if (val < 0) val = 0;
+                if (val > 100) val = 100;
+                sliderMarkup.value = val;
+                document.getElementById('lbl-proposal-markup-val').innerText = val.toFixed(1) + '%';
+                if (app.state.activeWorkspaceId) {
+                    localStorage.setItem(`proposal_markup_${app.state.activeWorkspaceId}`, val);
+                }
+                this.renderBreakdownTable();
+            });
+        }
+
+        if (chkApplyMarkup) {
+            chkApplyMarkup.addEventListener('change', (e) => {
+                if (app.state.activeWorkspaceId) {
+                    localStorage.setItem(`proposal_apply_markup_${app.state.activeWorkspaceId}`, e.target.checked ? 'true' : 'false');
+                }
+                this.renderBreakdownTable();
+            });
+        }
+    }
+
+    getCombinedMarkup() {
+        const contingency = app.state.targetContingency || 0;
+        const margin = app.state.targetMargin || 0;
+        const factor = (1 + contingency / 100) / (1 - margin / 100);
+        return (factor - 1) * 100;
     }
 
     render() {
+        if (this.lastWorkspaceId !== app.state.activeWorkspaceId) {
+            this.lastWorkspaceId = app.state.activeWorkspaceId;
+            this.initializedMarkup = false;
+        }
+
         // Auto-populate defaults if not set or default
         const companyInput = document.getElementById('proposal-company-name');
         const contactInput = document.getElementById('proposal-contact-person');
@@ -88,6 +138,31 @@ class ProposalComponent {
                 const randomNum = Math.floor(100 + Math.random() * 900);
                 refInput.value = `TEN-${cleanName.replace(/\s+/g, '-').toUpperCase()}-${randomNum}`;
             }
+        }
+
+        // Initialize markup inputs
+        const sliderMarkup = document.getElementById('slider-proposal-markup');
+        const inputMarkup = document.getElementById('input-proposal-markup');
+        const chkApplyMarkup = document.getElementById('chk-apply-markup-to-rates');
+
+        if (sliderMarkup && inputMarkup && !this.initializedMarkup) {
+            let savedMarkup = null;
+            let savedApply = null;
+            
+            if (app.state.activeWorkspaceId) {
+                savedMarkup = localStorage.getItem(`proposal_markup_${app.state.activeWorkspaceId}`);
+                savedApply = localStorage.getItem(`proposal_apply_markup_${app.state.activeWorkspaceId}`);
+            }
+
+            const defaultMarkup = savedMarkup !== null ? parseFloat(savedMarkup) : this.getCombinedMarkup();
+            const defaultApply = savedApply !== null ? savedApply === 'true' : true;
+
+            sliderMarkup.value = defaultMarkup.toFixed(1);
+            inputMarkup.value = defaultMarkup.toFixed(1);
+            document.getElementById('lbl-proposal-markup-val').innerText = defaultMarkup.toFixed(1) + '%';
+            if (chkApplyMarkup) chkApplyMarkup.checked = defaultApply;
+
+            this.initializedMarkup = true;
         }
 
         this.syncInputsToPreview();
@@ -157,11 +232,21 @@ class ProposalComponent {
             return;
         }
 
+        const chkApplyMarkup = document.getElementById('chk-apply-markup-to-rates');
+        const applyMarkup = chkApplyMarkup ? chkApplyMarkup.checked : true;
+        const sliderMarkup = document.getElementById('slider-proposal-markup');
+        const markupPercent = sliderMarkup ? parseFloat(sliderMarkup.value) : 0;
+
         let totalBase = 0;
+        let totalMarkedUp = 0;
 
         items.forEach(item => {
-            const rowTotal = item.qty * item.current;
-            totalBase += rowTotal;
+            const rowBaseTotal = item.qty * item.current;
+            totalBase += rowBaseTotal;
+
+            const rateDisplayed = applyMarkup ? item.current * (1 + markupPercent / 100) : item.current;
+            const rowTotalDisplayed = item.qty * rateDisplayed;
+            totalMarkedUp += rowTotalDisplayed;
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -171,8 +256,8 @@ class ProposalComponent {
                 </td>
                 <td>${item.unit}</td>
                 <td>${item.qty}</td>
-                <td class="text-right">£${item.current.toFixed(2)}</td>
-                <td class="text-right font-semibold">£${rowTotal.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td class="text-right">£${rateDisplayed.toFixed(2)}</td>
+                <td class="text-right font-semibold">£${rowTotalDisplayed.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -182,9 +267,44 @@ class ProposalComponent {
         const divisor = 1 - (app.state.targetMargin / 100);
         const finalBid = divisor > 0 ? (totalBase + contingencyAmt) / divisor : (totalBase + contingencyAmt);
 
-        document.getElementById('preview-doc-subtotal').innerText = '£' + totalBase.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('preview-doc-contingency').innerText = '£' + contingencyAmt.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('preview-doc-total').innerText = '£' + finalBid.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const table = document.querySelector('#preview-breakdown-section table');
+        const contingencyRow = document.getElementById('preview-doc-contingency')?.closest('tr');
+        const subtotalLabelTd = document.getElementById('preview-doc-subtotal')?.previousElementSibling;
+
+        if (applyMarkup) {
+            // Update column headers to reflect Gross Rates
+            if (table) {
+                const headers = table.querySelectorAll('thead th');
+                if (headers.length >= 5) {
+                    headers[4].innerText = 'Total (£)';
+                }
+            }
+
+            // Hide contingency row
+            if (contingencyRow) contingencyRow.style.display = 'none';
+
+            // Update Subtotal label and values
+            if (subtotalLabelTd) subtotalLabelTd.innerText = 'Subtotal (Gross Cost):';
+            document.getElementById('preview-doc-subtotal').innerText = '£' + totalMarkedUp.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('preview-doc-total').innerText = '£' + totalMarkedUp.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        } else {
+            // Reset column headers to default Net Rates
+            if (table) {
+                const headers = table.querySelectorAll('thead th');
+                if (headers.length >= 5) {
+                    headers[4].innerText = 'Net Total (£)';
+                }
+            }
+
+            // Show contingency row
+            if (contingencyRow) contingencyRow.style.display = '';
+
+            // Update Subtotal label and values
+            if (subtotalLabelTd) subtotalLabelTd.innerText = 'Subtotal (Net Cost):';
+            document.getElementById('preview-doc-subtotal').innerText = '£' + totalBase.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('preview-doc-contingency').innerText = '£' + contingencyAmt.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('preview-doc-total').innerText = '£' + finalBid.toLocaleString('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
     }
 
     renderValueEngineering() {
