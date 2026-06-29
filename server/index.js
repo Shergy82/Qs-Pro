@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const multer = require('multer');
@@ -11,9 +11,10 @@ const { getDbConnection, initDb, hashPassword, seedUserScope } = require('./data
 const XLSX = require('xlsx');
 const { parserRegistry } = require('./parsers');
 const { isInformationalOnly, normalizeDescription, extractRoomFromDescription } = require('./utils');
+const { registerSurveyRoutes } = require('./survey-routes');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const upload = multer({ dest: 'uploads/' });
 
 // Initialize Gemini
@@ -275,7 +276,7 @@ function localHeuristicExcelParser(filePath) {
         if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
           // Check if it's a continuation of the previous item
           const looksLikeContinuation =
-            description.trim().startsWith('•') ||
+            description.trim().startsWith('â€¢') ||
             description.trim().startsWith('-') ||
             description.trim().startsWith('*') ||
             /^[a-z]/.test(description.trim()) ||
@@ -414,7 +415,7 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
       merchant = bestLibraryMatch.supplier || 'Travis Perkins';
       productUrl = bestLibraryMatch.sourceUrl || '';
       confidence = 'High';
-      assumptions = `Matched with library rate: "${bestLibraryMatch.name}" (£${bestLibraryMatch.costRate}/${bestLibraryMatch.unit})`;
+      assumptions = `Matched with library rate: "${bestLibraryMatch.name}" (Â£${bestLibraryMatch.costRate}/${bestLibraryMatch.unit})`;
     } else {
       // 2. Hardcoded fallback dictionary matching standard UK merchants
       if (desc.includes('plaster') || desc.includes('skim') || desc.includes('board') || desc.includes('gyproc') || section.includes('plaster')) {
@@ -541,11 +542,11 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
       if (cleanUnit === 'm2' || cleanUnit === 'sqm') {
         materialRate = 12.50;
         labourRate = 8.50;
-        assumptions += ' (m² surface area rates)';
+        assumptions += ' (mÂ² surface area rates)';
       } else if (cleanUnit === 'm3' || cleanUnit === 'cum') {
         materialRate = 45.00;
         labourRate = 35.00;
-        assumptions += ' (m³ volume rates)';
+        assumptions += ' (mÂ³ volume rates)';
       } else if (cleanUnit === 'm' || cleanUnit === 'lm' || cleanUnit === 'linear') {
         materialRate = 4.50;
         labourRate = 3.50;
@@ -1667,7 +1668,7 @@ JSON format:
             config: {
               responseMimeType: 'application/json',
             }
-          }, 3, 1500);
+          }, 1, 250);
           pricedFromGemini = JSON.parse(response.text);
         }
       } catch (geminiError) {
@@ -1816,296 +1817,514 @@ app.post('/api/scrape', requireAuth, async (req, res) => {
 
 // --- AI Price Suggest API ---
 app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
-  const { description, unit } = req.body;
+  const { description, unit, quantity, category } = req.body || {};
+
   if (!description || !unit) {
-    return res.status(400).json({ error: 'Description and Unit are required' });
+    return res.status(400).json({
+      success: false,
+      error: 'Description and Unit are required'
+    });
   }
 
-  console.log(`[AI Price Suggest] Looking up cost for "${description}" (${unit})`);
+  const descText = String(description || '').trim();
+  const unitText = String(unit || '').trim();
+  const normDesc = normalizeDescription(descText, '');
+  const normUnit = unitText.toLowerCase().trim();
+  const qty = Math.max(Number(quantity) || 1, 1);
+  const categoryText = String(category || '').trim();
 
-  const prompt = `You are a professional UK Senior Quantity Surveyor and construction pricing expert.
-  Analyze the following item description and its unit of measurement:
-  Description: "${description}"
-  Unit of Measurement: "${unit}"
-  
-  Estimate the standard industry price/rate per 1 unit of this item in the UK construction market today (in GBP £).
-  Provide a breakdown of the typical cost and details of standard rates.
-  
-  Return a valid JSON object ONLY. Do not include markdown formatting or blocks.
-  The JSON fields MUST be:
-  - "success": true
-  - "minPrice": (number, standard minimum unit rate in £)
-  - "maxPrice": (number, standard maximum unit rate in £)
-  - "recommendedRate": (number, recommended median unit rate in £)
-  - "explanation": (string, short 2-3 sentence explanation of why this rate is estimated this way, what prep work/materials/labour it includes)
-  - "source": (string, description of industry sources like BCIS, SPON'S, or standard merchant indices)
-  
-  JSON format:
-  {
-    "success": true,
-    "minPrice": number,
-    "maxPrice": number,
-    "recommendedRate": number,
-    "explanation": "string",
-    "source": "string"
-  }`;
+  function responseFromSavedRate(rate) {
+    const materialRate = Number(rate.materialRate) || 0;
+    const labourRate = Number(rate.labourRate) || 0;
+    const plantRate = Number(rate.plantRate) || 0;
+    const subRate = Number(rate.subRate) || 0;
+    const total = Number(rate.costRate) || materialRate + labourRate + plantRate + subRate;
 
-  try {
-    if (!ai) {
-      throw new Error('Gemini API key is not configured.');
+    return {
+      success: true,
+      minPrice: total,
+      maxPrice: total,
+      recommendedRate: total,
+      explanation: 'Matched from your saved Price Book, so no AI lookup was required.',
+      source: 'Saved Firestore Price Book',
+      matchedRateId: rate.id || '',
+      matchedRateName: rate.name || ''
+    };
+  }
+
+  function detectQuantityFromDescription() {
+    const text = descText.toLowerCase();
+
+    const areaMatch = text.match(/(?:allowance\s*for\s*)?(\d+(?:\.\d+)?)\s*(?:m2|mï¿½|sqm|sq\s*m)/i);
+    if (areaMatch) {
+      return {
+        quantity: Number(areaMatch[1]),
+        unit: 'm2',
+        reason: 'Quantity extracted from description area allowance'
+      };
     }
 
-    const response = await generateContentWithRetry({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
+    const numberUnitMatch = text.match(/(\d+(?:\.\d+)?)\s*x\s*/i);
+    if (numberUnitMatch) {
+      return {
+        quantity: Number(numberUnitMatch[1]),
+        unit: unitText,
+        reason: 'Quantity extracted from item count'
+      };
+    }
+
+    return {
+      quantity: qty,
+      unit: unitText,
+      reason: 'Quantity supplied by rate modal'
+    };
+  }
+
+  function buildFastQSAssessment() {
+    const descLower = descText.toLowerCase();
+    const unitLower = unitText.toLowerCase().trim();
+    const detected = detectQuantityFromDescription();
+
+    if (
+      (unitLower === 'm2' || unitLower === 'mï¿½' || unitLower === 'sqm') &&
+      (descLower.includes('render') || descLower.includes('masonry paint') || descLower.includes('repaint') || descLower.includes('decorate')) &&
+      (descLower.includes('elevation') || descLower.includes('external') || descLower.includes('silicone') || descLower.includes('cracking') || descLower.includes('bubbling'))
+    ) {
+      let recommendedRate = 18.5;
+      let minPrice = 14.5;
+      let maxPrice = 24.5;
+
+      if (descLower.includes('silicone')) {
+        recommendedRate += 3.5;
+        minPrice += 2.5;
+        maxPrice += 4.5;
       }
-    }, 3, 1500);
 
-    const data = JSON.parse(response.text);
+      if (descLower.includes('cracking') || descLower.includes('bubbling')) {
+        recommendedRate += 4;
+        minPrice += 3;
+        maxPrice += 5;
+      }
 
-    // Safety check: Detect if the API returned a hardcoded mock response for a mismatched item description or mismatched unit type
-    const isMockResponse = data.recommendedRate === 15.5 && data.source === 'BCIS Index 2026';
-    const isActualDecoration = description.toLowerCase().includes('paint') ||
-      description.toLowerCase().includes('decorat') ||
-      description.toLowerCase().includes('emulsion');
-    const isExpectedUnit = unit.toLowerCase().includes('m2') || unit.toLowerCase().includes('sqm');
+      recommendedRate = Number(recommendedRate.toFixed(2));
+      minPrice = Number(minPrice.toFixed(2));
+      maxPrice = Number(maxPrice.toFixed(2));
 
-    if (isMockResponse && (!isActualDecoration || !isExpectedUnit)) {
-      console.warn(`[AI Price Suggest] Mismatched mock response detected for "${description}" (${unit}). Falling back to local offline estimator...`);
-      throw new Error("Mismatched mock response");
+      return {
+        success: true,
+        minPrice,
+        maxPrice,
+        recommendedRate,
+        detectedQuantity: detected.quantity,
+        detectedUnit: detected.unit,
+        totalEstimate: Number((recommendedRate * detected.quantity).toFixed(2)),
+        explanation:
+          'Fast QS assessment: external render/masonry redecorating priced per m2. The description contains an allowance of ' +
+          detected.quantity +
+          'm2, so the suggested rate is a m2 unit rate and the total estimate is rate multiplied by that measured area. Includes preparation to cracked/bubbling render, silicone masonry paint system and normal external access/productivity allowance.',
+        source: 'Fast UK QS External Decoration / Render Estimator'
+      };
     }
 
-    res.json(data);
-  } catch (err) {
-    console.warn('[AI Price Suggest] Gemini API failed or not configured. Using local offline estimator...', err.message);
+    return null;
+  }
 
+  function buildOfflinePrice() {
     let minPrice = 15;
     let maxPrice = 35;
     let recommendedRate = 22;
-    let explanation = `Based on average UK subcontracting rates, this item is estimated at standard regional prices. Includes standard labour hours and minor consumables.`;
-    let source = `Offline Heuristics Cost Index`;
+    let explanation = 'Based on average UK subcontracting rates, this item is estimated at standard regional prices. Includes standard labour hours and minor consumables.';
+    let source = 'Offline Heuristics Cost Index';
 
-    const descLower = description.toLowerCase();
-    const unitLower = unit.toLowerCase().trim();
-
+    const descLower = descText.toLowerCase();
+    const unitLower = unitText.toLowerCase().trim();
     const isHourly = unitLower === 'hr' || unitLower === 'hour' || unitLower === 'hours';
     const isDaily = unitLower === 'day' || unitLower === 'days' || unitLower === 'daily';
 
+    // Specialist EPC / UPVC windows and doors package estimator.
+    // This handles descriptions like:
+    // "10 x double, 7 x single, 2 x triple windows, 3 x double, 2x single doors"
+    // and prevents the generic Item fallback returning nonsense.
+    const isWindowDoorPackage =
+      (descLower.includes('window') || descLower.includes('door')) &&
+      (descLower.includes('upvc') || descLower.includes('u-value') || descLower.includes('epc') || descLower.includes('thermal') || descLower.includes('glazing'));
+
+    if (!isHourly && !isDaily && isWindowDoorPackage) {
+      const extractCount = (patterns) => {
+        for (const pattern of patterns) {
+          const match = descLower.match(pattern);
+          if (match && match[1]) return Number(match[1]) || 0;
+        }
+        return 0;
+      };
+
+      const doubleWindows = extractCount([
+        /(\d+)\s*x?\s*double[^\n,.;]*window/i,
+        /(\d+)\s*x?\s*double/i
+      ]);
+
+      const singleWindows = extractCount([
+        /(\d+)\s*x?\s*single[^\n,.;]*window/i,
+        /(\d+)\s*x?\s*single/i
+      ]);
+
+      const tripleWindows = extractCount([
+        /(\d+)\s*x?\s*triple[^\n,.;]*window/i,
+        /(\d+)\s*x?\s*triple/i
+      ]);
+
+      const doubleDoors = extractCount([
+        /(\d+)\s*x?\s*double[^\n,.;]*door/i
+      ]);
+
+      const singleDoors = extractCount([
+        /(\d+)\s*x?\s*single[^\n,.;]*door/i
+      ]);
+
+      const totalWindows = doubleWindows + singleWindows + tripleWindows;
+      const totalDoors = doubleDoors + singleDoors;
+
+      // Supply and fit benchmark allowances for EPC-compliant UPVC replacement units.
+      // These are deliberately mid-high because the spec requires thermal performance / U-value compliance.
+      const singleWindowRate = 575;
+      const doubleWindowRate = 825;
+      const tripleWindowRate = 1125;
+      const singleDoorRate = 1250;
+      const doubleDoorRate = 1850;
+
+      const windowSubtotal =
+        (singleWindows * singleWindowRate) +
+        (doubleWindows * doubleWindowRate) +
+        (tripleWindows * tripleWindowRate);
+
+      const doorSubtotal =
+        (singleDoors * singleDoorRate) +
+        (doubleDoors * doubleDoorRate);
+
+      const makingGoodAllowance = Math.max((windowSubtotal + doorSubtotal) * 0.08, 350);
+      const wasteAccessAndFixings = Math.max((windowSubtotal + doorSubtotal) * 0.05, 250);
+
+      const packageTotal = windowSubtotal + doorSubtotal + makingGoodAllowance + wasteAccessAndFixings;
+
+      minPrice = Number((packageTotal * 0.9).toFixed(2));
+      maxPrice = Number((packageTotal * 1.15).toFixed(2));
+      recommendedRate = Number(packageTotal.toFixed(2));
+
+      explanation =
+        'Specialist EPC UPVC windows/doors package estimate based on the quantities found in the specification: ' +
+        totalWindows + ' windows and ' + totalDoors + ' doors. Includes supply and fit of thermally compliant UPVC units, standard fixings, removal of existing units, making good allowance, access/waste allowance and normal installation labour.';
+
+      source = 'QS EPC UPVC Windows & Doors Package Estimator';
+
+      return {
+        success: true,
+        minPrice,
+        maxPrice,
+        recommendedRate,
+        explanation,
+        source
+      };
+    }
+
     if (isHourly) {
       if (descLower.includes('paint') || descLower.includes('decorat') || descLower.includes('emulsion')) {
-        minPrice = 18.00;
-        maxPrice = 28.00;
-        recommendedRate = 22.00;
-        explanation = `Standard painter/decorator hourly trade rate in the UK, excluding paint materials.`;
-        source = `UK Painting & Decorating Association Trade Rates`;
-      } else if (descLower.includes('concrete') || descLower.includes('slab')) {
-        minPrice = 20.00;
-        maxPrice = 30.00;
-        recommendedRate = 22.00;
-        explanation = `Groundworker / general concrete contractor hourly labour rate in the UK.`;
-        source = `Trade Union standard hourly scales`;
-      } else if (descLower.includes('radiator') || descLower.includes('cover') || descLower.includes('floor') || descLower.includes('sanding') || descLower.includes('polish') || descLower.includes('sill')) {
-        minPrice = 22.00;
-        maxPrice = 35.00;
-        recommendedRate = 28.00;
-        explanation = `Skilled carpenter / joiner hourly trade rate in the UK, excluding timber materials.`;
-        source = `UK Carpentry Association Wage Index`;
+        minPrice = 18;
+        maxPrice = 28;
+        recommendedRate = 22;
+        explanation = 'Standard painter/decorator hourly trade rate in the UK, excluding paint materials.';
+        source = 'Offline UK Decorating Labour Index';
+      } else if (descLower.includes('concrete') || descLower.includes('slab') || descLower.includes('ground')) {
+        minPrice = 20;
+        maxPrice = 30;
+        recommendedRate = 22;
+        explanation = 'Groundworker / general concrete contractor hourly labour rate in the UK.';
+        source = 'Offline Groundworks Labour Index';
+      } else if (descLower.includes('carp') || descLower.includes('join') || descLower.includes('floor') || descLower.includes('sill') || descLower.includes('door')) {
+        minPrice = 22;
+        maxPrice = 35;
+        recommendedRate = 28;
+        explanation = 'Skilled carpenter / joiner hourly trade rate in the UK, excluding timber materials.';
+        source = 'Offline Joinery Labour Index';
       } else {
-        minPrice = 18.00;
-        maxPrice = 30.00;
-        recommendedRate = 22.00;
-        explanation = `Average trade hourly subcontractor labour rate in the UK construction market.`;
-        source = `RICS Labour Cost Index`;
+        minPrice = 18;
+        maxPrice = 30;
+        recommendedRate = 22;
+        explanation = 'Average trade hourly subcontractor labour rate in the UK construction market.';
+        source = 'Offline Labour Cost Index';
       }
     } else if (isDaily) {
       if (descLower.includes('paint') || descLower.includes('decorat') || descLower.includes('emulsion')) {
-        minPrice = 150.00;
-        maxPrice = 220.00;
-        recommendedRate = 180.00;
-        explanation = `Standard painter/decorator daily rate in the UK, excluding paint materials.`;
-        source = `UK Painting & Decorating Association Trade Rates`;
-      } else if (descLower.includes('concrete') || descLower.includes('slab')) {
-        minPrice = 160.00;
-        maxPrice = 220.00;
-        recommendedRate = 180.00;
-        explanation = `Groundworker / general concrete contractor daily labour rate in the UK.`;
-        source = `Trade Union standard hourly scales`;
-      } else if (descLower.includes('radiator') || descLower.includes('cover') || descLower.includes('floor') || descLower.includes('sanding') || descLower.includes('polish') || descLower.includes('sill')) {
-        minPrice = 180.00;
-        maxPrice = 280.00;
-        recommendedRate = 220.00;
-        explanation = `Skilled carpenter / joiner daily rate in the UK, excluding timber materials.`;
-        source = `UK Carpentry Association Wage Index`;
-      } else {
-        minPrice = 150.00;
-        maxPrice = 250.00;
-        recommendedRate = 200.00;
-        explanation = `Average subcontractor daily labour rate in the UK construction market.`;
-        source = `RICS Labour Cost Index`;
-      }
-    } else {
-      if (descLower.includes('radiator') || descLower.includes('cover')) {
-        if (unitLower === 'm' || unitLower === 'lm' || unitLower === 'linear') {
-          minPrice = 70;
-          maxPrice = 120;
-          recommendedRate = 90.00;
-          explanation = `Supply and installation of MDF radiator casing, priced per linear meter.`;
-        } else if (unitLower === 'm2' || unitLower === 'sqm') {
-          minPrice = 90;
-          maxPrice = 165;
-          recommendedRate = 125.00;
-          explanation = `Supply and installation of custom radiator covers, priced per square meter of frontal area.`;
-        } else {
-          minPrice = 80;
-          maxPrice = 150;
-          recommendedRate = 113.45;
-          explanation = `Supply and installation of a standard MDF radiator cover, including carpenter labor for cutting, positioning, and wall fixing.`;
-        }
-        source = `UK General Joinery Benchmark Index`;
-      } else if (descLower.includes('floor') || descLower.includes('sanding') || descLower.includes('polish')) {
-        if (unitLower === 'm2' || unitLower === 'sqm') {
-          minPrice = 40;
-          maxPrice = 75;
-          recommendedRate = 55.00;
-          explanation = `Floor sanding and sealing/polishing. Price includes hiring sanding equipment, abrasive belts, and applying trade-grade satin polyurethane lacquer per square meter.`;
-        } else {
-          minPrice = 800;
-          maxPrice = 1500;
-          recommendedRate = 1100.00;
-          explanation = `Lump-sum floor sanding and sealing/polishing for a standard domestic room, including equipment hire and trade consumables.`;
-        }
-        source = `UK Flooring Association Cost Guide`;
-      } else if (descLower.includes('window sill') || descLower.includes('sill')) {
-        if (unitLower === 'm' || unitLower === 'lm' || unitLower === 'linear') {
-          minPrice = 25;
-          maxPrice = 45;
-          recommendedRate = 35.00;
-          explanation = `Painting and preparation of timber window sills, priced per linear meter. Includes decorators labour and satin finish coat.`;
-        } else {
-          minPrice = 70;
-          maxPrice = 110;
-          recommendedRate = 90.00;
-          explanation = `Sanded down, primed, and two coats of gloss or satinwood paint applied to standard timber sills. Includes materials and decorator labour.`;
-        }
-        source = `Trade Redecoration Standard Rates`;
-      } else if (descLower.includes('concrete') || descLower.includes('slab')) {
-        if (unitLower === 'm3' || unitLower === 'cum') {
-          minPrice = 90;
-          maxPrice = 130;
-          recommendedRate = 110;
-          explanation = `C25 Volumetric concrete mix averages £90 to £130 per m³ depending on regional transport and pump accessories.`;
-        } else if (unitLower === 'm2' || unitLower === 'sqm') {
-          minPrice = 30;
-          maxPrice = 50;
-          recommendedRate = 40.00;
-          explanation = `In-situ concrete floor slab per m² (assumes 100mm thickness). Reflects standard C25 ready-mix volume plus basic steel reinforcement mesh share.`;
-        } else {
-          minPrice = 75;
-          maxPrice = 110;
-          recommendedRate = 95;
-          explanation = `In-situ concrete floor slab per unit cost. Reflects standard C25 ready-mix volume plus basic steel reinforcement mesh share.`;
-        }
-        source = `BCIS Minor Works Pricing Guide`;
-      } else if (descLower.includes('hook') || descLower.includes('hooks')) {
-        if (descLower.includes('fireplace') || descLower.includes('brickwork')) {
-          minPrice = 100;
-          maxPrice = 180;
-          recommendedRate = 133.33;
-          explanation = `Labor to safely remove metal anchors/hooks from fireplace masonry, fill anchor holes, and color-match repair mortar.`;
-          source = `UK Masonry Restoration Rates`;
-        } else if (descLower.includes('ceiling')) {
-          minPrice = 120;
-          maxPrice = 220;
-          recommendedRate = 170.00;
-          explanation = `Specialist labor to safely detach, secure structural ceiling timbers, plaster repair, and re-anchor ceiling fixtures or hooks in standard rooms.`;
-          source = `UK Refurbishment Standard Hours`;
-        } else {
-          minPrice = 150;
-          maxPrice = 450;
-          recommendedRate = 340.00;
-          explanation = `Specialist labor rate to safely detach, secure structural ceiling timbers, plaster repair, and re-anchor ceiling fixtures or hooks in standard rooms.`;
-          source = `UK Joinery & Refurbishment Standard Hours`;
-        }
-      } else if (descLower.includes('paint') || descLower.includes('decorat') || descLower.includes('ceiling') || descLower.includes('emulsion')) {
-        if (unitLower === 'm2' || unitLower === 'sqm') {
-          minPrice = 12.00;
-          maxPrice = 18.00;
-          recommendedRate = 14.50;
-          explanation = `Ceiling redecoration (emulsion paint, 2 coats) averages £12.00 to £18.00 per m² in the UK, including surface prep, mist coat, and painting labour.`;
-          source = `UK Painting & Decorating Association Guidelines`;
-        } else if (descLower.includes('window sill') || descLower.includes('sill')) {
-          minPrice = 70;
-          maxPrice = 110;
-          recommendedRate = 90.00;
-          explanation = `Sanded down, primed, and two coats of gloss or satinwood paint applied to standard timber sills. Includes materials and decorator labour.`;
-          source = `Trade Redecoration Standard Rates`;
-        } else {
-          minPrice = 80;
-          maxPrice = 120;
-          recommendedRate = 90.00;
-          explanation = `Lump-sum redecoration for a standard sitting room ceiling. Includes minor crack repairs, sugar soaping, and two coats of trade emulsion paint.`;
-          source = `UK Painting & Decorating Association Guidelines`;
-        }
-      } else if (descLower.includes('sitting room')) {
         minPrice = 150;
-        maxPrice = 450;
-        recommendedRate = 340.00;
-        explanation = `Specialist labor rate to safely detach, secure structural ceiling timbers, plaster repair, and re-anchor ceiling fixtures or hooks in standard rooms.`;
-        source = `UK Joinery & Refurbishment Standard Hours`;
+        maxPrice = 220;
+        recommendedRate = 180;
+        explanation = 'Standard painter/decorator daily rate in the UK, excluding paint materials.';
+        source = 'Offline UK Decorating Labour Index';
+      } else if (descLower.includes('concrete') || descLower.includes('slab') || descLower.includes('ground')) {
+        minPrice = 160;
+        maxPrice = 240;
+        recommendedRate = 200;
+        explanation = 'Groundworker / general concrete contractor daily labour rate in the UK.';
+        source = 'Offline Groundworks Labour Index';
+      } else if (descLower.includes('carp') || descLower.includes('join') || descLower.includes('floor') || descLower.includes('sill') || descLower.includes('door')) {
+        minPrice = 180;
+        maxPrice = 280;
+        recommendedRate = 220;
+        explanation = 'Skilled carpenter / joiner daily rate in the UK, excluding timber materials.';
+        source = 'Offline Joinery Labour Index';
+      } else {
+        minPrice = 150;
+        maxPrice = 250;
+        recommendedRate = 200;
+        explanation = 'Average subcontractor daily labour rate in the UK construction market.';
+        source = 'Offline Labour Cost Index';
       }
+    } else if (descLower.includes('radiator') || descLower.includes('cover')) {
+      minPrice = unitLower === 'm' || unitLower === 'lm' ? 70 : 80;
+      maxPrice = unitLower === 'm' || unitLower === 'lm' ? 120 : 150;
+      recommendedRate = unitLower === 'm' || unitLower === 'lm' ? 90 : 115;
+      explanation = 'Supply and installation of MDF radiator casing / cover, priced against UK joinery benchmark rates.';
+      source = 'Offline Joinery Benchmark';
+    } else if (descLower.includes('floor') && (descLower.includes('sand') || descLower.includes('polish'))) {
+      minPrice = unitLower === 'm2' || unitLower === 'sqm' ? 40 : 800;
+      maxPrice = unitLower === 'm2' || unitLower === 'sqm' ? 75 : 1500;
+      recommendedRate = unitLower === 'm2' || unitLower === 'sqm' ? 55 : 1100;
+      explanation = 'Floor sanding and sealing / polishing including equipment hire, abrasives and finishing consumables.';
+      source = 'Offline Flooring Benchmark';
+    } else if (descLower.includes('paint') || descLower.includes('decorat') || descLower.includes('emulsion') || descLower.includes('ceiling')) {
+      minPrice = unitLower === 'm2' || unitLower === 'sqm' ? 12 : 80;
+      maxPrice = unitLower === 'm2' || unitLower === 'sqm' ? 18 : 120;
+      recommendedRate = unitLower === 'm2' || unitLower === 'sqm' ? 14.5 : 90;
+      explanation = 'Decoration allowance including standard preparation, labour and trade emulsion / finish coats.';
+      source = 'Offline Decorating Benchmark';
+    } else if (descLower.includes('concrete') || descLower.includes('slab')) {
+      minPrice = unitLower === 'm3' || unitLower === 'cum' ? 90 : 30;
+      maxPrice = unitLower === 'm3' || unitLower === 'cum' ? 130 : 50;
+      recommendedRate = unitLower === 'm3' || unitLower === 'cum' ? 110 : 40;
+      explanation = 'Concrete slab / C25 ready-mix allowance based on standard UK minor works pricing.';
+      source = 'Offline Concrete Benchmark';
     }
 
-    res.json({
+    return {
       success: true,
       minPrice,
       maxPrice,
       recommendedRate,
       explanation,
       source
+    };
+  }
+
+  function rateSplitForSavedBook(amount) {
+    const descLower = descText.toLowerCase();
+    const unitLower = unitText.toLowerCase().trim();
+
+    const labourLike =
+      unitLower === 'hr' ||
+      unitLower === 'hour' ||
+      unitLower === 'hours' ||
+      unitLower === 'day' ||
+      unitLower === 'days' ||
+      descLower.includes('labour') ||
+      descLower.includes('labor') ||
+      descLower.includes('install') ||
+      descLower.includes('fit') ||
+      descLower.includes('decorate') ||
+      descLower.includes('paint') ||
+      descLower.includes('skim') ||
+      descLower.includes('plaster');
+
+    if (labourLike) {
+      return { materialRate: 0, labourRate: amount, plantRate: 0, subRate: 0 };
+    }
+
+    return { materialRate: amount, labourRate: 0, plantRate: 0, subRate: 0 };
+  }
+
+  let db;
+
+  try {
+    db = await getDbConnection();
+
+    const savedRates = await db.all('SELECT * FROM rates WHERE user_id = ?', req.user.id);
+
+    let savedMatch = savedRates.find(rate => {
+      const rateNorm = normalizeDescription(rate.name || '', '');
+      const rateUnit = String(rate.unit || '').toLowerCase().trim();
+      return rateNorm && rateNorm === normDesc && (!rateUnit || !normUnit || rateUnit === normUnit);
+    });
+
+    if (!savedMatch) {
+      savedMatch = savedRates.find(rate => {
+        const rateNorm = normalizeDescription(rate.name || '', '');
+        const rateUnit = String(rate.unit || '').toLowerCase().trim();
+
+        if (!rateNorm || !normDesc) return false;
+        if (rateUnit && normUnit && rateUnit !== normUnit) return false;
+
+        return rateNorm.includes(normDesc) || normDesc.includes(rateNorm);
+      });
+    }
+
+    const savedBenchmark = savedMatch ? responseFromSavedRate(savedMatch) : null;
+
+    let data;
+
+    const fastAssessment = buildFastQSAssessment();
+    if (fastAssessment) {
+      data = fastAssessment;
+    } else {
+      try {
+      if (!ai) {
+        throw new Error('Gemini API key is not configured.');
+      }
+
+      const prompt = [
+        'You are a professional UK Senior Quantity Surveyor and construction pricing expert.',
+        'Analyze this construction work item and estimate the current UK unit rate in GBP.',
+        '',
+        'Description: "' + descText + '"',
+        'Unit of Measurement: "' + unitText + '"',
+        'Quantity being priced: ' + qty,
+        'Category: "' + categoryText + '"',
+        '',
+        'Ignore any saved or current user-entered price. Produce a fresh UK QS market assessment from the item description, unit and quantity only.',
+        savedBenchmark ? 'Important: do not blindly reuse the saved price. Use it only as a benchmark. Check whether current UK market pricing and quantity change the correct unit rate.' : '',
+        '',
+        'Return a valid JSON object only with:',
+        '{',
+        '  "success": true,',
+        '  "minPrice": number,',
+        '  "maxPrice": number,',
+        '  "recommendedRate": number,',
+        '  "explanation": "short 2-3 sentence QS explanation",',
+        '  "source": "pricing source description"',
+        '}'
+      ].join('\n');
+
+      const response = await generateContentWithRetry({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json'
+        }
+      }, 1, 250);
+
+      data = JSON.parse(response.text);
+
+      if (!data || data.success !== true || !Number.isFinite(Number(data.recommendedRate))) {
+        throw new Error('Invalid Gemini price response.');
+      }
+
+      data.minPrice = Number(data.minPrice) || Number(data.recommendedRate);
+      data.maxPrice = Number(data.maxPrice) || Number(data.recommendedRate);
+      data.recommendedRate = Number(data.recommendedRate);
+      data.explanation = data.explanation || 'AI generated UK construction pricing estimate.';
+      data.source = data.source || 'Gemini QS Pricing Estimate';
+
+      if (savedBenchmark) {
+        data.benchmarkRate = savedBenchmark.recommendedRate;
+        data.benchmarkSource = savedBenchmark.source;
+        data.source = data.source + '';
+      }
+    } catch (aiErr) {
+      console.warn('[AI Price Suggest] Gemini failed or unavailable. Using local estimator...', aiErr.message);
+      data = buildOfflinePrice();
+
+      if (savedBenchmark && data.source !== 'QS EPC UPVC Windows & Doors Package Estimator') {
+        const base = Number(savedBenchmark.recommendedRate) || Number(data.recommendedRate) || 0;
+        let adjustmentFactor = 1;
+
+        if (qty >= 10) adjustmentFactor = 0.9;
+        else if (qty >= 5) adjustmentFactor = 0.95;
+        else if (qty <= 1) adjustmentFactor = 1.05;
+
+        const adjusted = Number((base * adjustmentFactor).toFixed(2));
+
+        data.minPrice = Number((adjusted * 0.9).toFixed(2));
+        data.maxPrice = Number((adjusted * 1.1).toFixed(2));
+        data.recommendedRate = adjusted;
+        data.benchmarkRate = base;
+        data.benchmarkSource = savedBenchmark.source;
+        data.explanation = 'Saved Price Book rate used as a benchmark, then adjusted for the current quantity of ' + qty + ' and current estimating context. ' + data.explanation;
+        data.source = data.source + '';
+      }
+    }
+
+    }
+
+    const recommendedRate = Number(data.recommendedRate) || 0;
+    data.recommendedRate = recommendedRate;
+    data.minPrice = Number(data.minPrice) || recommendedRate;
+    data.maxPrice = Number(data.maxPrice) || recommendedRate;
+
+    if (savedBenchmark) {
+      data.savedBenchmark = {
+        rate: savedBenchmark.recommendedRate,
+        source: savedBenchmark.source,
+        name: savedBenchmark.matchedRateName || ''
+      };
+    }
+
+    await db.close();
+
+    return res.json({
+      ...data,
+      source: (data.source || 'QS AI Market Assessment') + ' - not saved until you choose Save Changes'
+    });
+  } catch (err) {
+    console.error('[AI Price Suggest] Route failed:', err);
+
+    if (db && typeof db.close === 'function') {
+      try {
+        await db.close();
+      } catch (_) {}
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'AI price lookup failed'
     });
   }
 });
 
 function localQSChatFallback(message, contextPrompt) {
   const msg = (message || '').toLowerCase();
-  let text = `### 🛠️ TrueCost QS - Offline Estimator Companion\n\n*Note: Your Gemini API Key is offline or has reached its quota limit. I am operating in high-fidelity offline mode to guide your project.* \n\n`;
+  let text = `### ðŸ› ï¸ TrueCost QS - Offline Estimator Companion\n\n*Note: Your Gemini API Key is offline or has reached its quota limit. I am operating in high-fidelity offline mode to guide your project.* \n\n`;
 
   if (msg.includes('plaster') || msg.includes('skim') || msg.includes('board') || msg.includes('dryline')) {
-    text += `#### 📋 Plastering & Finishes Guidance
-- **Materials**: Standard 12.5mm plasterboard sheets are priced around **£8.50/sheet** (Travis Perkins/Selco). Thistle multi-finish plaster is **£8.20/25kg bag** (covers approx. 10m² at 2mm thickness).
-- **Labour Daily Productivity**: 1 plasterer + 1 labourer can typically tackle **10m² to 15m² per day** of 2-coat skim, or **35m² to 50m² per day** of plasterboard boarding.
-- **Estimated Rates**: Budget **£18.00 to £25.00 per m²** for supply, board, and skim works in standard rooms. Add **10% waste allowance** for cutting board partitions.`;
+    text += `#### ðŸ“‹ Plastering & Finishes Guidance
+- **Materials**: Standard 12.5mm plasterboard sheets are priced around **Â£8.50/sheet** (Travis Perkins/Selco). Thistle multi-finish plaster is **Â£8.20/25kg bag** (covers approx. 10mÂ² at 2mm thickness).
+- **Labour Daily Productivity**: 1 plasterer + 1 labourer can typically tackle **10mÂ² to 15mÂ² per day** of 2-coat skim, or **35mÂ² to 50mÂ² per day** of plasterboard boarding.
+- **Estimated Rates**: Budget **Â£18.00 to Â£25.00 per mÂ²** for supply, board, and skim works in standard rooms. Add **10% waste allowance** for cutting board partitions.`;
   } else if (msg.includes('timber') || msg.includes('joiner') || msg.includes('skirting') || msg.includes('door') || msg.includes('stud')) {
-    text += `#### 🪚 Joinery & Timber Works Guidance
-- **Materials**: Standard treated CLS stud timber (38x89x2400mm) is approx. **£3.45/length** (Jewson/Travis). MDF Ogee skirting (120mm x 4.4m twice-primed) is **£14.20/length**. Standard trade internal pre-finished doors are **£45.00 to £90.00 each**.
+    text += `#### ðŸªš Joinery & Timber Works Guidance
+- **Materials**: Standard treated CLS stud timber (38x89x2400mm) is approx. **Â£3.45/length** (Jewson/Travis). MDF Ogee skirting (120mm x 4.4m twice-primed) is **Â£14.20/length**. Standard trade internal pre-finished doors are **Â£45.00 to Â£90.00 each**.
 - **Labour Daily Productivity**: A skilled carpenter can install **20m to 30m of skirting per day**, or hang **4 to 6 internal doors per day**.
-- **Estimated Rates**: Timber stud partition walls: **£35.00 to £50.00 per m²** (including studs, rockwool insulation, and boarding). Architraves/skirtings: **£8.00 per linear meter**.`;
+- **Estimated Rates**: Timber stud partition walls: **Â£35.00 to Â£50.00 per mÂ²** (including studs, rockwool insulation, and boarding). Architraves/skirtings: **Â£8.00 per linear meter**.`;
   } else if (msg.includes('concrete') || msg.includes('foundation') || msg.includes('ground') || msg.includes('excavate') || msg.includes('cement')) {
-    text += `#### 🏗️ Groundworks & Foundations Guidance
-- **Materials**: Volumetric ready-mix C25 concrete is approx. **£95.00 to £115.00 per m³** delivered. Rugby premium cement is **£6.50/25kg bag**.
-- **Labour / Equipment**: Standard 1.5t mini excavator hire is **£120.00/day** (excluding operator). Groundworker daily rate is **£200.00/day**.
-- **Estimated Rates**: Concrete strip foundation (excavate, backfill C25): **£180.00 to £240.00 per m³**. Skip hire (8-yard standard builder): **£280.00 to £350.00** per load.`;
+    text += `#### ðŸ—ï¸ Groundworks & Foundations Guidance
+- **Materials**: Volumetric ready-mix C25 concrete is approx. **Â£95.00 to Â£115.00 per mÂ³** delivered. Rugby premium cement is **Â£6.50/25kg bag**.
+- **Labour / Equipment**: Standard 1.5t mini excavator hire is **Â£120.00/day** (excluding operator). Groundworker daily rate is **Â£200.00/day**.
+- **Estimated Rates**: Concrete strip foundation (excavate, backfill C25): **Â£180.00 to Â£240.00 per mÂ³**. Skip hire (8-yard standard builder): **Â£280.00 to Â£350.00** per load.`;
   } else if (msg.includes('asbestos') || msg.includes('demolition') || msg.includes('downtaking')) {
-    text += `#### ⚠️ Asbestos & Demolition safety regulations (UK CAR 2012)
+    text += `#### âš ï¸ Asbestos & Demolition safety regulations (UK CAR 2012)
 - **Regulations**: Under **Control of Asbestos Regulations 2012**, all asbestos cement roofing, ridges, or tiling must be identified before demolition. 
 - **Handling**: While chrysotile (white asbestos) cement sheets can be handled by trained, competent contractors under non-licensed work rules, it must be double-bagged, handled without breaking, and placed in a sealed hazardous-waste skip.
-- **Costs**: Sealed hazardous skips range from **£280.00 to £450.00**. Expert non-licensed removal and disposal of roofing sheets budgets around **£45.00 to £65.00 per m²**.`;
+- **Costs**: Sealed hazardous skips range from **Â£280.00 to Â£450.00**. Expert non-licensed removal and disposal of roofing sheets budgets around **Â£45.00 to Â£65.00 per mÂ²**.`;
   } else if (msg.includes('margin') || msg.includes('contingency') || msg.includes('markup') || msg.includes('uplift') || msg.includes('waste')) {
-    text += `#### 📈 RICS-Compliant Markups & Cost Control
+    text += `#### ðŸ“ˆ RICS-Compliant Markups & Cost Control
 - **Residential Margin**: Standard contractor markups for residential extensions or refurbs range from **15% to 22.5%** depending on access and complexity.
 - **Commercial Margin**: Larger commercial works usually target **5% to 10%** overhead and profit margins.
 - **Waste Allowances**: Standard materials waste allowances are **10% for plasterboard/timber**, **5% for cement/aggregate bags**, and **2.5% for general items**.
 - **Contingency**: Maintain a **5% to 7.5% contingency fund** for hidden refurbishment works (especially foundations and old brickwork strip-outs).`;
   } else if (msg.includes('rate') || msg.includes('cost') || msg.includes('price') || msg.includes('pay')) {
-    text += `#### 💷 Standard Trade Rates & Labour Day Indexes
-- **Plasterer / Carpenter / Bricklayer / Plumber**: Standard trade daily rates across the UK average **£200.00 to £250.00 per day** (£25.00 to £32.00/hr).
-- **Electrician**: Averages **£250.00 to £300.00 per day** (£30.00 to £38.00/hr).
-- **General Labourer**: Averages **£120.00 to £150.00 per day** (£15.00 to £18.50/hr).
+    text += `#### ðŸ’· Standard Trade Rates & Labour Day Indexes
+- **Plasterer / Carpenter / Bricklayer / Plumber**: Standard trade daily rates across the UK average **Â£200.00 to Â£250.00 per day** (Â£25.00 to Â£32.00/hr).
+- **Electrician**: Averages **Â£250.00 to Â£300.00 per day** (Â£30.00 to Â£38.00/hr).
+- **General Labourer**: Averages **Â£120.00 to Â£150.00 per day** (Â£15.00 to Â£18.50/hr).
 - *Tip: You can manually override any specific labor days or trade daily rate directly inside the "Rate Build-up" tab in your Estimate Builder panel on the right side of the screen.*`;
   } else {
-    text += `#### 🧠 Quantity Surveying Cost Companion
+    text += `#### ðŸ§  Quantity Surveying Cost Companion
 How can I assist you with your estimating project today? Ask me about:
 - **Materials Cost**: Plasterboard sheets, timber CLS studs, paint emulsions, copper pipes, concrete mixes.
 - **Labour day rates & productivity indexes** for Plasterers, Carpenters, Groundworkers, and Electricians.
@@ -2136,11 +2355,11 @@ app.post('/api/chat', requireAuth, async (req, res) => {
       if (project) {
         const items = await db.all('SELECT * FROM estimate_items WHERE project_id = ?', projectId);
         contextPrompt = `
-You are currently helping the user with an estimate for the project: "${project.name}" (Client: ${project.client}, Status: ${project.status}, Sell Price: £${project.sellPrice}, Margin: ${project.margin}%).
+You are currently helping the user with an estimate for the project: "${project.name}" (Client: ${project.client}, Status: ${project.status}, Sell Price: Â£${project.sellPrice}, Margin: ${project.margin}%).
 Project Details: Tender Ref: ${project.tenderRef}, Trade Category: ${project.tradeCategory}, Address: ${project.address}, Start Date: ${project.startDate}, Duration: ${project.duration}, Waste Factor: ${project.wasteAllowance}%, Contingency: ${project.contingency}%, Labour Uplift: ${project.labourUplift}%, Plant Overhead: ${project.plantOverhead}%.
 
 Below is the list of work items in the Schedule of Rates for this project:
-${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quantity} ${item.unit}, Lab Rate: £${item.labourRate}, Mat Rate: £${item.materialRate}, Plant Rate: £${item.plantRate}, Sub Rate: £${item.subRate}, Sourced from: ${item.merchant || 'None'}, Confidence: ${item.confidence}, Notes: ${item.notes}`).join('\n')}
+${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quantity} ${item.unit}, Lab Rate: Â£${item.labourRate}, Mat Rate: Â£${item.materialRate}, Plant Rate: Â£${item.plantRate}, Sub Rate: Â£${item.subRate}, Sourced from: ${item.merchant || 'None'}, Confidence: ${item.confidence}, Notes: ${item.notes}`).join('\n')}
 `;
       }
       await db.close();
@@ -2272,6 +2491,466 @@ app.post('/api/projects/import', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Import error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+
+// --- Large Document Chunk Upload + Safe Excel Analysis ---
+const LARGE_UPLOAD_ROOT = path.join(__dirname, 'uploads-large');
+const LARGE_UPLOAD_TMP = path.join(LARGE_UPLOAD_ROOT, 'tmp');
+const LARGE_EXCEL_SHEET_ROW_LIMIT = 3000;
+const LARGE_EXCEL_MAX_ITEMS = 10000;
+
+try {
+  fs.mkdirSync(LARGE_UPLOAD_ROOT, { recursive: true });
+  fs.mkdirSync(LARGE_UPLOAD_TMP, { recursive: true });
+} catch (e) {
+  console.warn('[Large Upload] Failed to initialise upload folders:', e.message);
+}
+
+const largeChunkUpload = multer({ dest: LARGE_UPLOAD_TMP });
+
+function safeUploadId(value) {
+  return String(value || '')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 80);
+}
+
+function safeFileName(value) {
+  const base = path.basename(String(value || 'uploaded-file.xlsx'));
+  return base.replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 180);
+}
+
+function isExcelFileNameOrMime(fileName, mimeType) {
+  const lowerName = String(fileName || '').toLowerCase();
+  const lowerMime = String(mimeType || '').toLowerCase();
+
+  return (
+    lowerName.endsWith('.xlsx') ||
+    lowerName.endsWith('.xls') ||
+    lowerName.endsWith('.csv') ||
+    lowerMime.includes('spreadsheet') ||
+    lowerMime.includes('excel') ||
+    lowerMime.includes('csv')
+  );
+}
+
+function largeCellText(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\r?\n/g, ' ').trim();
+}
+
+function largeNumberFromCell(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  const text = String(value)
+    .replace(/,/g, '')
+    .replace(/[^\d.-]/g, '')
+    .trim();
+
+  if (!text) return null;
+
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+}
+
+function largeGuessUnit(description, explicitUnit) {
+  const unit = largeCellText(explicitUnit);
+  if (unit) return unit;
+
+  const desc = String(description || '').toLowerCase();
+
+  if (/\bm2\b|\bm²\b|\bsqm\b|\bsq\.?\s*m\b/.test(desc)) return 'm2';
+  if (/\bm3\b|\bm³\b|\bcu\.?\s*m\b/.test(desc)) return 'm3';
+  if (/\blm\b|\bl\/m\b|\blinear\b|\bmetre\b|\bm\b/.test(desc)) return 'm';
+  if (/\bno\b|\bnr\b|\beach\b/.test(desc)) return 'Nr';
+  if (/\bsum\b|\bls\b|\blump\b/.test(desc)) return 'Item';
+
+  return 'Item';
+}
+
+function largeLooksLikeSectionRow(row) {
+  if (!Array.isArray(row)) return false;
+
+  const cells = row
+    .map(largeCellText)
+    .filter(Boolean);
+
+  if (cells.length !== 1) return false;
+
+  const value = cells[0];
+  const lower = value.toLowerCase();
+
+  if (value.length < 3 || value.length > 60) return false;
+  if (lower.includes('total')) return false;
+  if (lower.includes('description')) return false;
+  if (lower.includes('quantity')) return false;
+  if (lower.includes('rate')) return false;
+  if (lower.includes('amount')) return false;
+
+  return true;
+}
+
+function largeSkipSheet(sheetName) {
+  const lower = String(sheetName || '').toLowerCase();
+
+  return (
+    lower.includes('collection') ||
+    lower.includes('summary') ||
+    lower.includes('total') ||
+    lower.includes('index') ||
+    lower.includes('instruction') ||
+    lower.includes('prelim cover') ||
+    lower.includes('contents')
+  );
+}
+
+function pushLargeParsedItem(items, rawSection, rawDescription, rawQuantity, rawUnit, selected = true) {
+  const description = largeCellText(rawDescription);
+  if (description.length < 5) return;
+
+  const descLower = description.toLowerCase();
+
+  if (descLower.includes('description of works')) return;
+  if (descLower.includes('description of work')) return;
+  if (descLower === 'description') return;
+  if (descLower === 'total') return;
+  if (descLower.includes('grand total')) return;
+  if (descLower.includes('subtotal')) return;
+
+  if (typeof isInformationalOnly === 'function' && isInformationalOnly(descLower)) {
+    return;
+  }
+
+  const roomResult = typeof extractRoomFromDescription === 'function'
+    ? extractRoomFromDescription(description, rawSection || 'General')
+    : { room: rawSection || 'General', description };
+
+  let quantity = largeNumberFromCell(rawQuantity);
+
+  if (!quantity || quantity <= 0) {
+    const inlineQty = description.match(/(\d+(?:\.\d+)?)\s*(m2|m²|m3|m³|lm|m|nr|no|item|sum)\b/i);
+    quantity = inlineQty ? Number(inlineQty[1]) : 1;
+  }
+
+  const unit = largeGuessUnit(description, rawUnit);
+
+  const key = `${roomResult.room}|${roomResult.description}|${quantity}|${unit}`.toLowerCase();
+  if (items.some(item => item._largeKey === key)) return;
+
+  items.push({
+    _largeKey: key,
+    section: roomResult.room || rawSection || 'General',
+    category: '',
+    description: roomResult.description || description,
+    quantity,
+    unit,
+    status: selected ? 'Yes' : 'No',
+    selected: !!selected
+  });
+}
+
+function parseLargeExcelWorkbook(filePath, originalName) {
+  console.log(`[Large Excel Parser] Reading large workbook safely: ${originalName}`);
+
+  const workbook = XLSX.readFile(filePath, {
+    sheetRows: LARGE_EXCEL_SHEET_ROW_LIMIT,
+    cellDates: false,
+    cellNF: false,
+    cellStyles: false
+  });
+
+  const items = [];
+
+  workbook.SheetNames.forEach((sheetName) => {
+    if (items.length >= LARGE_EXCEL_MAX_ITEMS) return;
+    if (largeSkipSheet(sheetName)) {
+      console.log(`[Large Excel Parser] Skipping sheet: ${sheetName}`);
+      return;
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) return;
+
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      raw: false,
+      defval: ''
+    });
+
+    if (!rows || rows.length === 0) return;
+
+    console.log(`[Large Excel Parser] Sheet "${sheetName}" loaded with ${rows.length} sampled rows.`);
+
+    let statusColIdx = -1;
+    const colVotes = Array.from({ length: 30 }, () => ({ yes: 0, no: 0 }));
+
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      if (!Array.isArray(row)) continue;
+
+      for (let c = 0; c < Math.min(row.length, 30); c++) {
+        const str = largeCellText(row[c]).toLowerCase();
+        if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[c].yes++;
+        if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[c].no++;
+      }
+    }
+
+    for (let c = 0; c < colVotes.length; c++) {
+      if (colVotes[c].yes + colVotes[c].no >= 2) {
+        statusColIdx = c;
+        break;
+      }
+    }
+
+    let currentSection = sheetName || 'General';
+
+    if (statusColIdx !== -1) {
+      const roomColIdx = 0;
+      const catColIdx = 1;
+      let descColIdx = 3;
+
+      if (descColIdx >= 30) descColIdx = statusColIdx + 1;
+
+      for (let r = 0; r < rows.length; r++) {
+        if (items.length >= LARGE_EXCEL_MAX_ITEMS) break;
+
+        const row = rows[r];
+        if (!Array.isArray(row) || row.length === 0) continue;
+
+        if (largeLooksLikeSectionRow(row)) {
+          currentSection = largeCellText(row.find(Boolean));
+          continue;
+        }
+
+        const possibleRoom = largeCellText(row[roomColIdx]);
+        if (possibleRoom && possibleRoom.length <= 45) {
+          const lowerRoom = possibleRoom.toLowerCase();
+          const blocked =
+            lowerRoom.includes('address') ||
+            lowerRoom.includes('cost') ||
+            lowerRoom.includes('duration') ||
+            lowerRoom.includes('capital expenditure') ||
+            lowerRoom.includes('compliance') ||
+            lowerRoom.includes('allow for') ||
+            lowerRoom.includes('breakdown');
+
+          if (!blocked && lowerRoom !== 'yes' && lowerRoom !== 'no') {
+            currentSection = possibleRoom;
+          }
+        }
+
+        const status = largeCellText(row[statusColIdx]).toLowerCase();
+        const selected =
+          status === 'yes' ||
+          status === 'y' ||
+          status === 'true' ||
+          status === '1';
+
+        const category = largeCellText(row[catColIdx]);
+        const details = largeCellText(row[descColIdx]);
+
+        let description = '';
+        if (category && details) {
+          description = `${category}: ${details}`;
+        } else {
+          description = category || details;
+        }
+
+        pushLargeParsedItem(items, currentSection, description, 1, 'Item', selected);
+      }
+
+      return;
+    }
+
+    let itemIdx = 0;
+    let descIdx = -1;
+    let unitIdx = -1;
+    let qtyIdx = -1;
+    let headerRowIdx = -1;
+
+    for (let r = 0; r < Math.min(rows.length, 40); r++) {
+      const row = rows[r];
+      if (!Array.isArray(row)) continue;
+
+      for (let c = 0; c < Math.min(row.length, 40); c++) {
+        const str = largeCellText(row[c]).toLowerCase();
+
+        if (str === 'item' || str === 'ref' || str === 'code') itemIdx = c;
+        if (str.includes('description') || str.includes('work') || str === 'details') {
+          descIdx = c;
+          headerRowIdx = r;
+        }
+        if (str === 'unit' || str === 'uom') unitIdx = c;
+        if (str === 'qty' || str.includes('quantity')) qtyIdx = c;
+      }
+
+      if (descIdx !== -1) break;
+    }
+
+    if (descIdx === -1) {
+      for (let c = 0; c < 12; c++) {
+        let score = 0;
+        for (let r = 0; r < Math.min(rows.length, 80); r++) {
+          const value = largeCellText(rows[r]?.[c]);
+          if (value.length > 20) score++;
+        }
+        if (score >= 3) {
+          descIdx = c;
+          break;
+        }
+      }
+    }
+
+    if (descIdx === -1) descIdx = 1;
+
+    const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+
+    for (let r = startRow; r < rows.length; r++) {
+      if (items.length >= LARGE_EXCEL_MAX_ITEMS) break;
+
+      const row = rows[r];
+      if (!Array.isArray(row) || row.length === 0) continue;
+
+      if (largeLooksLikeSectionRow(row)) {
+        currentSection = largeCellText(row.find(Boolean));
+        continue;
+      }
+
+      const description = largeCellText(row[descIdx]);
+      if (!description || description.length < 5) continue;
+
+      const itemCode = largeCellText(row[itemIdx]);
+      const unit = unitIdx !== -1 ? largeCellText(row[unitIdx]) : '';
+      const quantity = qtyIdx !== -1 ? row[qtyIdx] : '';
+
+      const hasQty = largeNumberFromCell(quantity) !== null;
+      const hasUnit = !!unit;
+      const hasItemCode = !!itemCode;
+      const hasInlineQty = /(\d+(?:\.\d+)?)\s*(no\.?|nr|m2|m²|m3|m³|lm|m\b|item|sum)/i.test(description);
+
+      if (!hasQty && !hasUnit && !hasItemCode && !hasInlineQty && description.length < 40) {
+        continue;
+      }
+
+      pushLargeParsedItem(items, currentSection, description, quantity, unit, true);
+    }
+  });
+
+  const cleanedItems = items.map(({ _largeKey, ...item }) => item);
+
+  console.log(`[Large Excel Parser] Extracted ${cleanedItems.length} items from ${originalName}.`);
+
+  return cleanedItems;
+}
+
+app.post('/api/upload-document-chunk', requireAuth, largeChunkUpload.single('chunk'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No chunk uploaded.' });
+    }
+
+    const uploadId = safeUploadId(req.body.uploadId);
+    const chunkIndex = Number(req.body.chunkIndex);
+    const totalChunks = Number(req.body.totalChunks);
+
+    if (!uploadId || !Number.isInteger(chunkIndex) || chunkIndex < 0 || !Number.isInteger(totalChunks) || totalChunks < 1) {
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.status(400).json({ error: 'Invalid chunk metadata.' });
+    }
+
+    const uploadDir = path.join(LARGE_UPLOAD_ROOT, uploadId);
+    fs.mkdirSync(uploadDir, { recursive: true });
+
+    const targetPath = path.join(uploadDir, `${chunkIndex}.part`);
+    fs.renameSync(req.file.path, targetPath);
+
+    return res.json({
+      success: true,
+      uploadId,
+      chunkIndex,
+      totalChunks
+    });
+  } catch (error) {
+    console.error('[Large Upload] Chunk upload failed:', error);
+    try {
+      if (req.file?.path) fs.unlinkSync(req.file.path);
+    } catch (e) {}
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/analyze-document-large', requireAuth, async (req, res) => {
+  const uploadId = safeUploadId(req.body?.uploadId);
+  const originalName = safeFileName(req.body?.fileName);
+  const mimeType = req.body?.fileType || 'application/octet-stream';
+  const totalChunks = Number(req.body?.totalChunks);
+
+  let rebuiltPath = null;
+  let uploadDir = null;
+
+  try {
+    if (!uploadId || !Number.isInteger(totalChunks) || totalChunks < 1) {
+      return res.status(400).json({ error: 'Invalid large upload metadata.' });
+    }
+
+    if (!isExcelFileNameOrMime(originalName, mimeType)) {
+      return res.status(400).json({
+        error: 'Large-file route currently supports Excel/CSV files. Use the normal analyser for smaller PDFs.'
+      });
+    }
+
+    uploadDir = path.join(LARGE_UPLOAD_ROOT, uploadId);
+
+    if (!fs.existsSync(uploadDir)) {
+      return res.status(400).json({ error: 'Large upload chunks not found.' });
+    }
+
+    rebuiltPath = path.join(LARGE_UPLOAD_ROOT, `${uploadId}-${originalName}`);
+
+    if (fs.existsSync(rebuiltPath)) {
+      fs.unlinkSync(rebuiltPath);
+    }
+
+    fs.writeFileSync(rebuiltPath, Buffer.alloc(0));
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkPath = path.join(uploadDir, `${i}.part`);
+
+      if (!fs.existsSync(chunkPath)) {
+        throw new Error(`Missing upload chunk ${i + 1} of ${totalChunks}.`);
+      }
+
+      fs.appendFileSync(rebuiltPath, fs.readFileSync(chunkPath));
+    }
+
+    console.log(`[Large Upload] Rebuilt file ${originalName} from ${totalChunks} chunks.`);
+
+    const extractedItems = parseLargeExcelWorkbook(rebuiltPath, originalName);
+
+    return res.json({
+      success: true,
+      filename: originalName,
+      largeFile: true,
+      items: extractedItems
+    });
+  } catch (error) {
+    console.error('[Large Upload] Analysis failed:', error);
+    return res.status(500).json({ error: error.message });
+  } finally {
+    try {
+      if (rebuiltPath && fs.existsSync(rebuiltPath)) fs.unlinkSync(rebuiltPath);
+    } catch (e) {}
+
+    try {
+      if (uploadDir && fs.existsSync(uploadDir)) {
+        fs.rmSync(uploadDir, { recursive: true, force: true });
+      }
+    } catch (e) {}
   }
 });
 
@@ -2713,6 +3392,8 @@ app.get(/^(?!\/api)/, (req, res) => {
   res.sendFile(path.join(__dirname, '../index.html'));
 });
 
+registerSurveyRoutes(app, requireAuth);
+
 app.listen(PORT, () => {
   console.log(`Scraper backend running on http://localhost:${PORT}`);
 });
@@ -2723,3 +3404,4 @@ module.exports = {
   localQSChatFallback,
   extractRoomFromDescription
 };
+

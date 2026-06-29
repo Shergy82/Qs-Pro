@@ -1,4 +1,4 @@
-/**
+﻿/**
  * QS Pro AI - Main Coordinator & State Manager
  * Safer full rewrite
  */
@@ -112,6 +112,8 @@ class QSProApp {
 
             this.state.token = loginData.token;
             this.state.user = loginData.user;
+            localStorage.setItem('qs_pro_auth_token', loginData.token);
+            localStorage.setItem('qs_pro_auth_user', JSON.stringify(loginData.user));
 
             console.log('Login successful:', this.state.user?.email);
         } catch (loginErr) {
@@ -130,6 +132,8 @@ class QSProApp {
 
                 this.state.token = registerData.token;
                 this.state.user = registerData.user;
+                localStorage.setItem('qs_pro_auth_token', registerData.token);
+                localStorage.setItem('qs_pro_auth_user', JSON.stringify(registerData.user));
 
                 console.log('Registration/login successful:', this.state.user?.email);
             } catch (regErr) {
@@ -789,8 +793,9 @@ class QSProApp {
                 statusPill = `<span class="status-pill status-analyzed"><span class="dot"></span>Analysed</span>`;
             } else if (file.status === 'Analyzing') {
                 statusPill = `<span class="status-pill status-analyzing"><span class="dot dot-pulse"></span>Scanning...</span>`;
+            } else if (file.status === 'Failed') {
+                statusPill = `<span class="status-pill status-pending" style="color: var(--color-red);"><span class="dot"></span>Failed</span>`;
             }
-
             const tr = document.createElement('tr');
 
             tr.innerHTML = `
@@ -916,6 +921,48 @@ class QSProApp {
         this.renderFileList();
     }
 
+    async analyzeLargeFileInChunks(fileObj, rawFile, parserVersion) {
+        const CHUNK_SIZE_BYTES = 8 * 1024 * 1024; // 8 MB chunks, safely below platform request limits
+        const totalChunks = Math.ceil(rawFile.size / CHUNK_SIZE_BYTES);
+        const uploadId = `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            const start = chunkIndex * CHUNK_SIZE_BYTES;
+            const end = Math.min(start + CHUNK_SIZE_BYTES, rawFile.size);
+            const chunk = rawFile.slice(start, end);
+
+            fileObj.details = `Uploading large file chunk ${chunkIndex + 1} of ${totalChunks}...`;
+            this.renderFileList();
+
+            const chunkForm = new FormData();
+            chunkForm.append('chunk', chunk, `${rawFile.name}.part-${chunkIndex}`);
+            chunkForm.append('uploadId', uploadId);
+            chunkForm.append('chunkIndex', String(chunkIndex));
+            chunkForm.append('totalChunks', String(totalChunks));
+            chunkForm.append('fileName', rawFile.name);
+            chunkForm.append('fileType', rawFile.type || 'application/octet-stream');
+
+            await this.apiFetch('/api/upload-document-chunk', {
+                method: 'POST',
+                body: chunkForm
+            });
+        }
+
+        fileObj.details = 'Large file uploaded. Analysing workbook safely...';
+        this.renderFileList();
+
+        return await this.apiFetch('/api/analyze-document-large', {
+            method: 'POST',
+            body: {
+                uploadId,
+                totalChunks,
+                fileName: rawFile.name,
+                fileType: rawFile.type || 'application/octet-stream',
+                parserVersion
+            }
+        });
+    }
+
     async simulateFileAnalysis() {
         const pendingFiles = this.state.uploadedFiles.filter((f) => f.status === 'Pending');
         if (pendingFiles.length === 0) return;
@@ -929,6 +976,8 @@ class QSProApp {
 
         this.renderFileList();
 
+        const MAX_DIRECT_AI_ANALYSIS_BYTES = 30 * 1024 * 1024; // 30 MB safe limit for normal route
+
         for (const fileObj of pendingFiles) {
             try {
                 const rawFile = fileObj.fileRef;
@@ -940,14 +989,20 @@ class QSProApp {
                 const parserSelect = document.getElementById('select-parser-version');
                 const parserVersion = parserSelect ? parserSelect.value : 'legacy';
 
-                const formData = new FormData();
-                formData.append('file', rawFile);
-                formData.append('parserVersion', parserVersion);
+                let result = null;
 
-                const result = await this.apiFetch('/api/analyze-document', {
-                    method: 'POST',
-                    body: formData
-                });
+                if (rawFile.size > MAX_DIRECT_AI_ANALYSIS_BYTES) {
+                    result = await this.analyzeLargeFileInChunks(fileObj, rawFile, parserVersion);
+                } else {
+                    const formData = new FormData();
+                    formData.append('file', rawFile);
+                    formData.append('parserVersion', parserVersion);
+
+                    result = await this.apiFetch('/api/analyze-document', {
+                        method: 'POST',
+                        body: formData
+                    });
+                }
 
                 if (!result?.success) {
                     throw new Error(result?.error || 'Document analysis failed.');
@@ -957,19 +1012,17 @@ class QSProApp {
                 fileObj.details = `Extracted ${result.items?.length || 0} items. Ready to import.`;
                 this.renderFileList();
 
-                // Store in state to preview
                 this.state.importPreview = {
                     filename: result.filename || fileObj.name,
                     items: result.items || []
                 };
 
-                // Show the preview modal
                 this.showImportPreview();
 
             } catch (err) {
                 console.error('Failed to analyse file:', err);
 
-                fileObj.status = 'Pending';
+                fileObj.status = 'Failed';
                 fileObj.details = `Error: ${err.message}`;
                 this.renderFileList();
             }
@@ -977,7 +1030,6 @@ class QSProApp {
 
         if (btnProcess) btnProcess.disabled = false;
     }
-
     async showImportPreview() {
         if (!this.state.importPreview) return;
         const modal = document.getElementById('import-preview-modal');
@@ -1154,7 +1206,7 @@ class QSProApp {
 
             card.innerHTML = `
                 <div class="text-xs font-semibold text-primary" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px; margin-bottom: 4px;">
-                    <span>📍 ${this.escapeHtml(room)}</span>
+                    <span>ðŸ“ ${this.escapeHtml(room)}</span>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
@@ -1195,7 +1247,7 @@ class QSProApp {
             card.style.gap = '4px';
 
             card.innerHTML = `
-                <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">📍 ${this.escapeHtml(room)}</span>
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">ðŸ“ ${this.escapeHtml(room)}</span>
                 <div style="display: flex; gap: 4px;">
                     <input type="number" step="0.01" class="form-input text-xs" style="padding: 4px; text-align: right; background: rgba(0,0,0,0.25); flex: 1;" placeholder="W" value="${dims.width}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'width', this.value)">
                     <input type="number" step="0.01" class="form-input text-xs" style="padding: 4px; text-align: right; background: rgba(0,0,0,0.25); flex: 1;" placeholder="L" value="${dims.length}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'length', this.value)">
@@ -1265,9 +1317,9 @@ class QSProApp {
         const descLower = (description || '').toLowerCase();
         const unitLower = (unit || '').toLowerCase().trim();
 
-        const isM2 = ['m2', 'm²', 'sqm', 'sq.m', 'sq m'].includes(unitLower);
+        const isM2 = ['m2', 'mÂ²', 'sqm', 'sq.m', 'sq m'].includes(unitLower);
         const isM = ['m', 'lm', 'linear', 'linear meter', 'l.m'].includes(unitLower);
-        const isM3 = ['m3', 'm³'].includes(unitLower);
+        const isM3 = ['m3', 'mÂ³'].includes(unitLower);
 
         // ONLY calculate quantities for dimensional units
         if (!isM2 && !isM && !isM3) {
@@ -1746,3 +1798,7 @@ window.addEventListener('DOMContentLoaded', () => {
         app.advisor.populateDashboardQuickList();
     }
 });
+
+
+
+
