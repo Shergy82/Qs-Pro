@@ -1,4 +1,4 @@
-/**
+﻿/**
  * QS Pro AI - Pricing Engine & SOR Matcher Component
  */
 
@@ -172,17 +172,20 @@ class PricingComponent {
         });
 
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-secondary py-5">No rates match search filter</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-secondary py-5">No rates match search filter</td></tr>`;
             return;
         }
 
         filtered.forEach((r, idx) => {
             const tr = document.createElement('tr');
+            const roomName = r.section || r.room || 'General';
+            const shortDesc = (r.desc || '').length > 140 ? (r.desc || '').slice(0, 140).trim() + '…' : (r.desc || '');
             tr.innerHTML = `
+                <td><input type="checkbox" class="pricing-row-select" value="${r.code}"></td>
+                <td><span class="badge badge-gray text-xs">${roomName}</span></td>
                 <td>
-                    <div class="font-semibold">${r.desc}</div>
+                    <div class="font-semibold">${shortDesc}</div>
                 </td>
-                <td><span class="badge badge-gray text-xs">${r.category}</span></td>
                 <td>
                     <select class="form-input text-xs" style="background: #0e1422; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; width: 80px; color: var(--text-primary); outline: none; display: inline-block;" onchange="pricingComponent.updateRateUnit('${r.code}', this.value)">
                         <option value="Nr" ${r.unit === 'Nr' ? 'selected' : ''}>Nr</option>
@@ -470,6 +473,12 @@ class PricingComponent {
                 document.getElementById('ai-suggested-source').innerText = data.source || 'Standard UK Construction Index';
                 
                 this.modalAISuggestedRate = data.recommendedRate;
+
+                if (data.detectedQuantity && Number(data.detectedQuantity) > 1 && (!rate.qty || Number(rate.qty) <= 1)) {
+                    rate.qty = Number(data.detectedQuantity);
+                    const qtyInput = document.getElementById('rate-qty-input');
+                    if (qtyInput) qtyInput.value = rate.qty;
+                }
                 
                 loadingDiv.style.display = 'none';
                 resultsDiv.style.display = 'block';
@@ -508,6 +517,94 @@ class PricingComponent {
         this.calcModalTotal();
     }
 
+    toggleAllPricingRows(checked) {
+        document.querySelectorAll('.pricing-row-select').forEach(cb => {
+            cb.checked = checked;
+        });
+    }
+
+    getSelectedRatesForAI() {
+        const selectedCodes = Array.from(document.querySelectorAll('.pricing-row-select:checked')).map(cb => cb.value);
+        return this.rates.filter(r => selectedCodes.includes(String(r.code)));
+    }
+
+    async applyAIPriceToRate(rate) {
+        const data = await app.apiFetch('/api/ai/price-suggest', {
+            method: 'POST',
+            body: {
+                description: rate.desc,
+                unit: rate.unit,
+                quantity: rate.qty || 1,
+                category: rate.category || ''
+            }
+        });
+
+        if (!data || !data.success || !Number.isFinite(Number(data.recommendedRate))) {
+            throw new Error('Invalid AI price response');
+        }
+
+        const aiRate = Number(data.recommendedRate);
+
+        rate.materialRate = 0;
+        rate.labourRate = 0;
+        rate.plantRate = 0;
+        rate.subRate = 0;
+
+        if (rate.category === 'labor') {
+            rate.labourRate = aiRate;
+        } else if (rate.category === 'plant') {
+            rate.plantRate = aiRate;
+        } else if (rate.category === 'subcontractor') {
+            rate.subRate = aiRate;
+        } else {
+            rate.materialRate = aiRate;
+        }
+
+        rate.current = aiRate;
+        rate.company = aiRate;
+        rate.market = aiRate;
+
+        if (data.detectedQuantity && Number(data.detectedQuantity) > 1 && (!rate.qty || Number(rate.qty) <= 1)) {
+            rate.qty = Number(data.detectedQuantity);
+        }
+
+        await this.saveRateToBackend(rate);
+        return data;
+    }
+
+    async quickAIPriceSelected() {
+        const selectedRates = this.getSelectedRatesForAI();
+
+        if (selectedRates.length === 0) {
+            alert('Select at least one pricing item first.');
+            return;
+        }
+
+        if (!confirm(`AI price ${selectedRates.length} selected item(s)? This will overwrite their current unit rates.`)) {
+            return;
+        }
+
+        let updated = 0;
+        let failed = 0;
+
+        for (const rate of selectedRates) {
+            try {
+                await this.applyAIPriceToRate(rate);
+                updated++;
+            } catch (err) {
+                failed++;
+                console.error('Quick AI pricing failed for:', rate.desc, err);
+            }
+        }
+
+        this.render();
+
+        if (app.advisor) {
+            app.advisor.recalculateTenderTotals();
+        }
+
+        alert(`Quick AI pricing complete. Updated: ${updated}. Failed: ${failed}.`);
+    }
     updateRateQty(code, newQty) {
         const rate = this.rates.find(r => r.code === code);
         if (rate) {

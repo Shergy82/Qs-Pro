@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QS Pro AI – Intelligent Quantity Surveying & Tender Management</title>
+    <title>QS Pro AI - Intelligent Quantity Surveying & Tender Management</title>
     <!-- Google Fonts: Outfit (headings) & Inter (body, numbers, tables) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -181,7 +181,7 @@
                                 <svg class="text-amber animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0110 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0112 2z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                                 <h3>AI Commercial Advisor Insights</h3>
                             </div>
-                            <button class="text-button" onclick="app.switchPanel('risk')">Open Risk Review →</button>
+                            <button class="text-button" onclick="app.switchPanel('risk')">Open Risk Review â†’</button>
                         </div>
                         <div class="advisor-quick-list" id="advisor-quick-list">
                             <!-- Populated dynamically by app.js -->
@@ -354,7 +354,7 @@
                                     <!-- Manual Room Calculator (collapsible, active when unit is polygon or line) -->
                                     <div id="manual-calculator-container" style="display: none; background: rgba(255, 255, 255, 0.02); padding: 10px; border-radius: var(--border-radius-sm); border: 1px dashed rgba(99, 102, 241, 0.2); margin-bottom: 8px;">
                                         <div style="font-size: 0.7rem; font-weight: 600; color: var(--color-indigo); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-                                            <span>📐 Room Calculator</span>
+                                            <span>ðŸ“ Room Calculator</span>
                                         </div>
                                         <div class="flex gap-2" style="margin-bottom: 6px;">
                                             <div style="flex: 1;">
@@ -459,9 +459,11 @@
                                     <option value="subcontractor">Subcontractor</option>
                                 </select>
                                 <button class="btn btn-secondary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.syncTenderRatesWithLibrary()">
-                                    <span>🔄 Sync from Library</span>
+                                    <span>Sync from Library</span>
                                 </button>
-                                <button class="btn btn-primary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.openAddEstimateItemModal()">
+                                <button id="btn-quick-ai-selected" class="btn btn-secondary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.quickAIPriceSelected()">
+                                    <span>AI Price Selected</span>
+                                </button>                                <button class="btn btn-primary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.openAddEstimateItemModal()">
                                     <span>+ Add Item</span>
                                 </button>
                             </div>
@@ -471,8 +473,9 @@
                             <table class="pricing-table">
                                 <thead>
                                     <tr>
+                                        <th style="width: 38px;"><input type="checkbox" onchange="pricingComponent.toggleAllPricingRows(this.checked)"></th>
+                                        <th style="width: 140px;">Room</th>
                                         <th>Description</th>
-                                        <th>Category</th>
                                         <th>Unit</th>
                                         <th class="text-right" style="width: 100px;">Quantity</th>
                                         <th class="text-right">Rate (£)</th>
@@ -552,8 +555,9 @@
                                 <table class="pricing-table">
                                     <thead>
                                         <tr>
-                                            <th>Description</th>
-                                            <th>Category</th>
+                                            <th style="width: 38px;"><input type="checkbox" onchange="pricingComponent.toggleAllPricingRows(this.checked)"></th>
+                                        <th style="width: 140px;">Room</th>
+                                        <th>Description</th>
                                             <th>Trade Scope</th>
                                             <th>Unit</th>
                                             <th class="text-right">Standard Cost Rate (£)</th>
@@ -759,7 +763,7 @@
                             </div>
                             <div>
                                 <label class="form-label" for="proposal-intro-text">Executive Summary Intro</label>
-                                <textarea id="proposal-intro-text" class="form-textarea" rows="4">Following review of your tender drawings and architectural specification, we are pleased to submit our commercial quotation for the proposed works. Our cost estimate outlines quantities computed via AI-assisted models and cross-checked against current supplier indices.</textarea>
+                                <textarea id="proposal-intro-text" class="form-textarea" rows="4">Following review of your tender drawings and architectural specification, I am pleased to submit my quotation for the proposed works. I have prepared the attached cost summary based on the information provided, measured items and associated rates, setting out the proposed tender value for your review.</textarea>
                             </div>
                             
                             <div class="border-t pt-4">
@@ -801,14 +805,10 @@
                             <div class="document-sheet" id="print-sheet-content">
                                 <div class="doc-header">
                                     <div class="doc-logo-title">
-                                        <div class="doc-brand-logo">A</div>
-                                        <div>
-                                            <h4 id="preview-brand-name">Apex Builders Ltd</h4>
-                                            <span class="text-xs text-secondary">General Contracting & Quantity Surveying</span>
-                                        </div>
+                                        <img class="doc-brand-logo-img" src="assets/gvd-logo.png" alt="GVD Contracts Limited" style="width: 190px; max-width: 190px; height: auto; object-fit: contain; display: block;">
                                     </div>
                                     <div class="doc-meta text-right">
-                                        <h3 class="text-xl font-bold">COMMERCIAL PROPOSAL</h3>
+                                        <h3 class="text-xl font-bold">QUOTE PROPOSAL</h3>
                                         <p class="text-xs text-secondary">Ref: <span id="preview-doc-ref">TEN-2026-042</span></p>
                                         <p class="text-xs text-secondary">Date: <span id="preview-doc-date">June 10, 2026</span></p>
                                     </div>
@@ -820,7 +820,7 @@
                                 </div>
 
                                 <div class="doc-section mt-6" id="preview-breakdown-section">
-                                    <h5>2. Commercial Cost Summary</h5>
+                                    <h5>2. Cost Summary</h5>
                                     <table class="doc-table mt-2">
                                         <thead>
                                             <tr>
@@ -860,7 +860,7 @@
                                 </div>
 
                                 <div class="doc-footer mt-8 border-t pt-4">
-                                    <p class="text-center text-xs text-secondary">QS Pro AI Estimation System • Approved for Submission by <span id="preview-doc-contact">Phil Estimator</span></p>
+                                    <p class="text-center text-xs text-secondary">Approved for Submission by <span id="preview-doc-contact">Phil Estimator</span></p>
                                 </div>
                             </div>
                         </div>
@@ -917,7 +917,7 @@
                         <!-- Room Calculator for Adjust Rate Modal (collapsible, active when unit is m2 or m) -->
                         <div id="adjust-calculator-container" style="display: none; background: rgba(255, 255, 255, 0.02); padding: 10px; border-radius: var(--border-radius-sm); border: 1px dashed rgba(99, 102, 241, 0.2); margin-bottom: 12px;">
                             <div style="font-size: 0.7rem; font-weight: 600; color: var(--color-indigo); margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-                                <span>📐 Room Calculator</span>
+                                <span>ðŸ“ Room Calculator</span>
                             </div>
                             <div class="flex gap-2" style="margin-bottom: 6px;">
                                 <div style="flex: 1;">
@@ -982,7 +982,7 @@
                         <p class="text-xs text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 16px;">Query the AI model to search for current UK industry standard rates for this specific task and unit.</p>
                         
                         <button type="button" class="btn btn-primary text-xs" id="btn-trigger-ai-lookup" style="padding: 8px 12px;">
-                            <span id="ai-lookup-btn-text">🔍 AI Market Rate Lookup</span>
+                            <span id="ai-lookup-btn-text">ðŸ” AI Market Rate Lookup</span>
                         </button>
                         
                         <!-- AI Results Container -->
@@ -1223,7 +1223,7 @@
                 <!-- Room Calculator for Add Estimate Item Modal (collapsible, active when unit is m2 or m) -->
                 <div id="add-item-calculator-container" style="display: none; background: rgba(255, 255, 255, 0.02); padding: 12px; border-radius: var(--border-radius-sm); border: 1px dashed rgba(99, 102, 241, 0.2); margin-top: 10px;">
                     <div style="font-size: 0.75rem; font-weight: 600; color: var(--color-indigo); margin-bottom: 8px; display: flex; align-items: center; gap: 4px;">
-                        <span>📐 Room Dimensions Calculator</span>
+                        <span>ðŸ“ Room Dimensions Calculator</span>
                     </div>
                     <div class="grid-3-col" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
                         <div>
@@ -1305,7 +1305,7 @@
                     <!-- Left Sidebar: Edit/View Room Sizing on the fly -->
                     <div style="width: 300px; display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--border-color); padding-right: 20px; overflow-y: auto; flex-shrink: 0;">
                         <div style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
-                            <h4 class="text-xs font-bold text-primary" style="margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">📐 Quick Dimension Adjust</h4>
+                            <h4 class="text-xs font-bold text-primary" style="margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">ðŸ“ Quick Dimension Adjust</h4>
                             <p class="text-xs text-secondary" style="margin: 0;">Tweak room sizes here to re-calculate quantities instantly.</p>
                         </div>
                         <div id="import-step3-dimensions-container" style="display: flex; flex-direction: column; gap: 12px;">
@@ -1325,7 +1325,7 @@
                                 <label class="text-xs text-secondary font-semibold" style="margin: 0;">Filter Items</label>
                                 <div style="position: relative;">
                                     <input type="text" id="import-preview-search" class="form-input text-xs" style="width: 100%; padding: 6px 10px 6px 28px; background: rgba(0,0,0,0.25);" placeholder="Search descriptions..." oninput="app.filterPreviewItems()">
-                                    <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 11px;">🔍</span>
+                                    <span style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 11px;">ðŸ”</span>
                                 </div>
                             </div>
                         </div>
@@ -1376,6 +1376,6 @@
     <script src="components/pricing.js"></script>
     <script src="components/library.js"></script>
     <script src="components/advisor.js"></script>
-    <script src="components/proposal.js"></script>
+    <script src="components/proposal.js?v=ve-live-2"></script>
 </body>
 </html>

@@ -415,7 +415,7 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
       merchant = bestLibraryMatch.supplier || 'Travis Perkins';
       productUrl = bestLibraryMatch.sourceUrl || '';
       confidence = 'High';
-      assumptions = `Matched with library rate: "${bestLibraryMatch.name}" (Â£${bestLibraryMatch.costRate}/${bestLibraryMatch.unit})`;
+      assumptions = `Matched with library rate: "${bestLibraryMatch.name}" (£${bestLibraryMatch.costRate}/${bestLibraryMatch.unit})`;
     } else {
       // 2. Hardcoded fallback dictionary matching standard UK merchants
       if (desc.includes('plaster') || desc.includes('skim') || desc.includes('board') || desc.includes('gyproc') || section.includes('plaster')) {
@@ -542,11 +542,11 @@ function localKeywordPricing(items, libraryRates, labourRates, projectTradeCateg
       if (cleanUnit === 'm2' || cleanUnit === 'sqm') {
         materialRate = 12.50;
         labourRate = 8.50;
-        assumptions += ' (mÂ² surface area rates)';
+        assumptions += ' (m² surface area rates)';
       } else if (cleanUnit === 'm3' || cleanUnit === 'cum') {
         materialRate = 45.00;
         labourRate = 35.00;
-        assumptions += ' (mÂ³ volume rates)';
+        assumptions += ' (m³ volume rates)';
       } else if (cleanUnit === 'm' || cleanUnit === 'lm' || cleanUnit === 'linear') {
         materialRate = 4.50;
         labourRate = 3.50;
@@ -1123,7 +1123,9 @@ app.post('/api/projects/sync', requireAuth, async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
-    for (const item of items) {
+    const orderedImportItems = items.map((item, index) => ({ ...item, sortOrder: Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex ?? index) })).sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder));
+
+    for (const item of orderedImportItems) {
       await insertItem.run(
         item.id || crypto.randomUUID(),
         id,
@@ -1530,6 +1532,7 @@ app.post('/api/projects/:id/reprice', requireAuth, async (req, res) => {
 
     // Group items by normalized description to ensure 100% rate consistency
     const itemsGroupedByDesc = {};
+
     for (const item of items) {
       const normDesc = normalizeDescription(item.description, item.section);
       if (!itemsGroupedByDesc[normDesc]) {
@@ -2167,6 +2170,18 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
 
     const savedBenchmark = savedMatch ? responseFromSavedRate(savedMatch) : null;
 
+    const aiPriceCache = global.aiPriceSuggestCache || (global.aiPriceSuggestCache = new Map());
+    const aiPriceCacheKey = [normDesc, normUnit, qty, categoryText.toLowerCase()].join('|');
+    const aiPriceCached = aiPriceCache.get(aiPriceCacheKey);
+    if (aiPriceCached && Date.now() - aiPriceCached.savedAt < 30 * 24 * 60 * 60 * 1000) {
+      await db.close();
+      return res.json({
+        ...aiPriceCached.data,
+        cached: true,
+        source: (aiPriceCached.data.source || 'QS AI Market Assessment') + ' - cached repeat result, held for 30 days unless description/unit/quantity/category changes'
+      });
+    }
+
     let data;
 
     const fastAssessment = buildFastQSAssessment();
@@ -2265,6 +2280,8 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
       };
     }
 
+    aiPriceCache.set(aiPriceCacheKey, { savedAt: Date.now(), data: { ...data } });
+
     await db.close();
 
     return res.json({
@@ -2293,24 +2310,24 @@ function localQSChatFallback(message, contextPrompt) {
 
   if (msg.includes('plaster') || msg.includes('skim') || msg.includes('board') || msg.includes('dryline')) {
     text += `#### ðŸ“‹ Plastering & Finishes Guidance
-- **Materials**: Standard 12.5mm plasterboard sheets are priced around **Â£8.50/sheet** (Travis Perkins/Selco). Thistle multi-finish plaster is **Â£8.20/25kg bag** (covers approx. 10mÂ² at 2mm thickness).
-- **Labour Daily Productivity**: 1 plasterer + 1 labourer can typically tackle **10mÂ² to 15mÂ² per day** of 2-coat skim, or **35mÂ² to 50mÂ² per day** of plasterboard boarding.
-- **Estimated Rates**: Budget **Â£18.00 to Â£25.00 per mÂ²** for supply, board, and skim works in standard rooms. Add **10% waste allowance** for cutting board partitions.`;
+- **Materials**: Standard 12.5mm plasterboard sheets are priced around **£8.50/sheet** (Travis Perkins/Selco). Thistle multi-finish plaster is **£8.20/25kg bag** (covers approx. 10m² at 2mm thickness).
+- **Labour Daily Productivity**: 1 plasterer + 1 labourer can typically tackle **10m² to 15m² per day** of 2-coat skim, or **35m² to 50m² per day** of plasterboard boarding.
+- **Estimated Rates**: Budget **£18.00 to £25.00 per m²** for supply, board, and skim works in standard rooms. Add **10% waste allowance** for cutting board partitions.`;
   } else if (msg.includes('timber') || msg.includes('joiner') || msg.includes('skirting') || msg.includes('door') || msg.includes('stud')) {
     text += `#### ðŸªš Joinery & Timber Works Guidance
-- **Materials**: Standard treated CLS stud timber (38x89x2400mm) is approx. **Â£3.45/length** (Jewson/Travis). MDF Ogee skirting (120mm x 4.4m twice-primed) is **Â£14.20/length**. Standard trade internal pre-finished doors are **Â£45.00 to Â£90.00 each**.
+- **Materials**: Standard treated CLS stud timber (38x89x2400mm) is approx. **£3.45/length** (Jewson/Travis). MDF Ogee skirting (120mm x 4.4m twice-primed) is **£14.20/length**. Standard trade internal pre-finished doors are **£45.00 to £90.00 each**.
 - **Labour Daily Productivity**: A skilled carpenter can install **20m to 30m of skirting per day**, or hang **4 to 6 internal doors per day**.
-- **Estimated Rates**: Timber stud partition walls: **Â£35.00 to Â£50.00 per mÂ²** (including studs, rockwool insulation, and boarding). Architraves/skirtings: **Â£8.00 per linear meter**.`;
+- **Estimated Rates**: Timber stud partition walls: **£35.00 to £50.00 per m²** (including studs, rockwool insulation, and boarding). Architraves/skirtings: **£8.00 per linear meter**.`;
   } else if (msg.includes('concrete') || msg.includes('foundation') || msg.includes('ground') || msg.includes('excavate') || msg.includes('cement')) {
     text += `#### ðŸ—ï¸ Groundworks & Foundations Guidance
-- **Materials**: Volumetric ready-mix C25 concrete is approx. **Â£95.00 to Â£115.00 per mÂ³** delivered. Rugby premium cement is **Â£6.50/25kg bag**.
-- **Labour / Equipment**: Standard 1.5t mini excavator hire is **Â£120.00/day** (excluding operator). Groundworker daily rate is **Â£200.00/day**.
-- **Estimated Rates**: Concrete strip foundation (excavate, backfill C25): **Â£180.00 to Â£240.00 per mÂ³**. Skip hire (8-yard standard builder): **Â£280.00 to Â£350.00** per load.`;
+- **Materials**: Volumetric ready-mix C25 concrete is approx. **£95.00 to £115.00 per m³** delivered. Rugby premium cement is **£6.50/25kg bag**.
+- **Labour / Equipment**: Standard 1.5t mini excavator hire is **£120.00/day** (excluding operator). Groundworker daily rate is **£200.00/day**.
+- **Estimated Rates**: Concrete strip foundation (excavate, backfill C25): **£180.00 to £240.00 per m³**. Skip hire (8-yard standard builder): **£280.00 to £350.00** per load.`;
   } else if (msg.includes('asbestos') || msg.includes('demolition') || msg.includes('downtaking')) {
     text += `#### âš ï¸ Asbestos & Demolition safety regulations (UK CAR 2012)
 - **Regulations**: Under **Control of Asbestos Regulations 2012**, all asbestos cement roofing, ridges, or tiling must be identified before demolition. 
 - **Handling**: While chrysotile (white asbestos) cement sheets can be handled by trained, competent contractors under non-licensed work rules, it must be double-bagged, handled without breaking, and placed in a sealed hazardous-waste skip.
-- **Costs**: Sealed hazardous skips range from **Â£280.00 to Â£450.00**. Expert non-licensed removal and disposal of roofing sheets budgets around **Â£45.00 to Â£65.00 per mÂ²**.`;
+- **Costs**: Sealed hazardous skips range from **£280.00 to £450.00**. Expert non-licensed removal and disposal of roofing sheets budgets around **£45.00 to £65.00 per m²**.`;
   } else if (msg.includes('margin') || msg.includes('contingency') || msg.includes('markup') || msg.includes('uplift') || msg.includes('waste')) {
     text += `#### ðŸ“ˆ RICS-Compliant Markups & Cost Control
 - **Residential Margin**: Standard contractor markups for residential extensions or refurbs range from **15% to 22.5%** depending on access and complexity.
@@ -2319,9 +2336,9 @@ function localQSChatFallback(message, contextPrompt) {
 - **Contingency**: Maintain a **5% to 7.5% contingency fund** for hidden refurbishment works (especially foundations and old brickwork strip-outs).`;
   } else if (msg.includes('rate') || msg.includes('cost') || msg.includes('price') || msg.includes('pay')) {
     text += `#### ðŸ’· Standard Trade Rates & Labour Day Indexes
-- **Plasterer / Carpenter / Bricklayer / Plumber**: Standard trade daily rates across the UK average **Â£200.00 to Â£250.00 per day** (Â£25.00 to Â£32.00/hr).
-- **Electrician**: Averages **Â£250.00 to Â£300.00 per day** (Â£30.00 to Â£38.00/hr).
-- **General Labourer**: Averages **Â£120.00 to Â£150.00 per day** (Â£15.00 to Â£18.50/hr).
+- **Plasterer / Carpenter / Bricklayer / Plumber**: Standard trade daily rates across the UK average **£200.00 to £250.00 per day** (£25.00 to £32.00/hr).
+- **Electrician**: Averages **£250.00 to £300.00 per day** (£30.00 to £38.00/hr).
+- **General Labourer**: Averages **£120.00 to £150.00 per day** (£15.00 to £18.50/hr).
 - *Tip: You can manually override any specific labor days or trade daily rate directly inside the "Rate Build-up" tab in your Estimate Builder panel on the right side of the screen.*`;
   } else {
     text += `#### ðŸ§  Quantity Surveying Cost Companion
@@ -2355,11 +2372,11 @@ app.post('/api/chat', requireAuth, async (req, res) => {
       if (project) {
         const items = await db.all('SELECT * FROM estimate_items WHERE project_id = ?', projectId);
         contextPrompt = `
-You are currently helping the user with an estimate for the project: "${project.name}" (Client: ${project.client}, Status: ${project.status}, Sell Price: Â£${project.sellPrice}, Margin: ${project.margin}%).
+You are currently helping the user with an estimate for the project: "${project.name}" (Client: ${project.client}, Status: ${project.status}, Sell Price: £${project.sellPrice}, Margin: ${project.margin}%).
 Project Details: Tender Ref: ${project.tenderRef}, Trade Category: ${project.tradeCategory}, Address: ${project.address}, Start Date: ${project.startDate}, Duration: ${project.duration}, Waste Factor: ${project.wasteAllowance}%, Contingency: ${project.contingency}%, Labour Uplift: ${project.labourUplift}%, Plant Overhead: ${project.plantOverhead}%.
 
 Below is the list of work items in the Schedule of Rates for this project:
-${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quantity} ${item.unit}, Lab Rate: Â£${item.labourRate}, Mat Rate: Â£${item.materialRate}, Plant Rate: Â£${item.plantRate}, Sub Rate: Â£${item.subRate}, Sourced from: ${item.merchant || 'None'}, Confidence: ${item.confidence}, Notes: ${item.notes}`).join('\n')}
+${items.map(item => `- [${item.section}] ${item.description}: Qty: ${item.quantity} ${item.unit}, Lab Rate: £${item.labourRate}, Mat Rate: £${item.materialRate}, Plant Rate: £${item.plantRate}, Sub Rate: £${item.subRate}, Sourced from: ${item.merchant || 'None'}, Confidence: ${item.confidence}, Notes: ${item.notes}`).join('\n')}
 `;
       }
       await db.close();
@@ -2438,7 +2455,9 @@ app.post('/api/projects/import', requireAuth, async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
-    for (const item of items) {
+    const orderedImportItems = items.map((item, index) => ({ ...item, sortOrder: Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex ?? index) })).sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder));
+
+    for (const item of orderedImportItems) {
       const cat = item.category ? item.category.trim() : '';
       const desc = item.description ? item.description.trim() : '';
       let combined = desc;
@@ -3275,7 +3294,29 @@ ${excelText}`
             }
           }, 2, 1000);
           const geminiItems = JSON.parse(response.text);
-          geminiItems.forEach(item => {
+          const sourceLinesForOrder = excelText.split(/\r?\n/).map((line, index) => ({ index, text: String(line || '').toLowerCase() }));
+
+          function findSpreadsheetSourceOrder(item, fallbackIndex) {
+            const text = (String(item.section || '') + ' ' + String(item.description || '')).toLowerCase();
+            const tokens = text.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(token => token.length >= 4 && !['item','work','works','description','allowance','general'].includes(token));
+            let bestIndex = Number.MAX_SAFE_INTEGER;
+            let bestScore = 0;
+
+            for (const line of sourceLinesForOrder) {
+              let score = 0;
+              for (const token of tokens) {
+                if (line.text.includes(token)) score++;
+              }
+              if (score > bestScore || (score === bestScore && score > 0 && line.index < bestIndex)) {
+                bestScore = score;
+                bestIndex = line.index;
+              }
+            }
+
+            return bestScore > 0 ? bestIndex : 100000 + fallbackIndex;
+          }
+
+          geminiItems.map((item, index) => ({ ...item, sourceOrder: findSpreadsheetSourceOrder(item, index) })).sort((a, b) => Number(a.sourceOrder || 0) - Number(b.sourceOrder || 0)).forEach(item => {
             const roomResult = extractRoomFromDescription(item.description || '', item.section || 'General');
             extractedItems.push({
               section: roomResult.room,
@@ -3283,6 +3324,8 @@ ${excelText}`
               description: roomResult.description,
               quantity: item.quantity || 1,
               unit: item.unit || 'Item',
+              sourceOrder: item.sourceOrder,
+              sortOrder: item.sourceOrder,
               status: 'Yes',
               selected: true
             });
@@ -3302,7 +3345,9 @@ ${excelText}`
                 description: roomResult.description,
                 quantity: item.quantity || 1,
                 unit: item.unit || 'Item',
-                status: 'Yes',
+              sourceOrder: item.sourceOrder,
+              sortOrder: item.sourceOrder,
+              status: 'Yes',
                 selected: true
               });
             }
@@ -3368,7 +3413,9 @@ Structure for each object:
             description: roomResult.description,
             quantity: item.quantity || 1,
             unit: item.unit || 'Item',
-            status: 'Yes',
+              sourceOrder: item.sourceOrder,
+              sortOrder: item.sourceOrder,
+              status: 'Yes',
             selected: true
           };
         });
@@ -3404,4 +3451,3 @@ module.exports = {
   localQSChatFallback,
   extractRoomFromDescription
 };
-
