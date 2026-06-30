@@ -262,49 +262,229 @@ class ProposalComponent {
         return lines;
     }
 
-    buildPdfBlob(lines) {
-        const encoder = new TextEncoder();
-        const pageLineLimit = 48;
-        const pages = [];
+    escapePdfLiteral(value) {
+        return String(value ?? '')
+            .replace(/£/g, '__POUND_SIGN__')
+            .replace(/[“”]/g, '"')
+            .replace(/[‘’]/g, "'")
+            .replace(/[–—]/g, '-')
+            .replace(/&/g, 'and')
+            .replace(/\\/g, '\\\\')
+            .replace(/\(/g, '\\(')
+            .replace(/\)/g, '\\)')
+            .replace(/[\r\n\t]+/g, ' ')
+            .replace(/[^\x20-\x7E]|__POUND_SIGN__/g, (match) => match === '__POUND_SIGN__' ? '\\243' : ' ')
+            .trim();
+    }
 
-        for (let i = 0; i < lines.length; i += pageLineLimit) {
-            pages.push(lines.slice(i, i + pageLineLimit));
+    wrapPdfTextForWidth(value, maxWidth, fontSize = 9) {
+        const clean = String(value ?? '')
+            .replace(/[\r\n\t]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (!clean) return [''];
+
+        const avgCharWidth = fontSize * 0.52;
+        const maxChars = Math.max(18, Math.floor(maxWidth / avgCharWidth));
+        return this.wrapPdfText(clean, maxChars);
+    }
+
+    buildProposalDocumentPdfBlob() {
+        this.render();
+
+        const encoder = new TextEncoder();
+        const pageWidth = 595;
+        const pageHeight = 842;
+        const margin = 42;
+        const bottomMargin = 58;
+        const rightMargin = pageWidth - margin;
+        const pages = [];
+        let commands = [];
+        let y = pageHeight - 48;
+
+        const money = (value) => `£${(Number(value) || 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const safeNumber = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+
+        const add = (cmd) => commands.push(cmd);
+        const text = (value, x, textY, size = 9, font = 'F1') => {
+            add(`BT /${font} ${size} Tf ${x.toFixed(2)} ${textY.toFixed(2)} Td (${this.escapePdfLiteral(value)}) Tj ET`);
+        };
+        const line = (x1, y1, x2, y2) => add(`0.75 w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
+        const rectFill = (x, rectY, width, height, gray = 0.94) => add(`q ${gray} g ${x.toFixed(2)} ${rectY.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re f Q`);
+
+        const finishPage = () => {
+            if (commands.length) pages.push(commands.join('\n'));
+            commands = [];
+            y = pageHeight - 48;
+        };
+
+        const ensureSpace = (heightNeeded) => {
+            if (y - heightNeeded < bottomMargin) {
+                finishPage();
+            }
+        };
+
+        const paragraph = (value, x, width, size = 9, leading = 12, font = 'F1') => {
+            const lines = this.wrapPdfTextForWidth(value, width, size);
+            ensureSpace((lines.length * leading) + 8);
+            lines.forEach((lineText) => {
+                text(lineText, x, y, size, font);
+                y -= leading;
+            });
+            return lines.length;
+        };
+
+        const ref = document.getElementById('preview-doc-ref')?.innerText || 'Quote Proposal';
+        const date = document.getElementById('preview-doc-date')?.innerText || new Date().toLocaleDateString('en-GB');
+        const intro = document.getElementById('preview-doc-intro')?.innerText || '';
+        const contact = document.getElementById('preview-doc-contact')?.innerText || 'Estimator';
+
+        text('QUOTE PROPOSAL', margin, y, 15, 'F2');
+        y -= 20;
+        text(`Reference: ${ref}`, margin, y, 9.5, 'F1');
+        y -= 14;
+        text(`Date: ${date}`, margin, y, 9.5, 'F1');
+        y -= 24;
+        line(margin, y, rightMargin, y);
+        y -= 24;
+
+        text('1. EXECUTIVE SUMMARY', margin, y, 12, 'F2');
+        y -= 18;
+        paragraph(intro, margin, rightMargin - margin, 9.5, 13, 'F1');
+        y -= 14;
+
+        ensureSpace(60);
+        text('2. COST SUMMARY', margin, y, 12, 'F2');
+        y -= 22;
+
+        const items = window.app && app.pricing && Array.isArray(app.pricing.rates)
+            ? app.pricing.rates.filter(r => Number(r.qty) > 0)
+            : [];
+
+        const markupMultiplier = this.getProposalMarkupMultiplier();
+        const descX = margin;
+        const unitX = 342;
+        const qtyX = 388;
+        const rateX = 425;
+        const totalX = 500;
+        const descWidth = 286;
+        const rowGap = 6;
+        let runningTotal = 0;
+
+        const drawTableHeader = () => {
+            ensureSpace(38);
+            rectFill(margin, y - 18, rightMargin - margin, 26, 0.93);
+            text('Description', descX, y - 8, 8.5, 'F2');
+            text('Unit', unitX, y - 8, 8.5, 'F2');
+            text('Qty', qtyX, y - 8, 8.5, 'F2');
+            text('Rate', rateX, y - 8, 8.5, 'F2');
+            text('Total', totalX, y - 8, 8.5, 'F2');
+            y -= 30;
+            line(margin, y + 7, rightMargin, y + 7);
+        };
+
+        if (items.length === 0) {
+            paragraph('No cost items configured with quantities.', margin, rightMargin - margin, 10, 13, 'F1');
+        } else {
+            drawTableHeader();
+
+            items.forEach((item) => {
+                const qty = safeNumber(item.qty);
+                const rate = safeNumber(item.current) * markupMultiplier;
+                const rowTotal = qty * rate;
+                runningTotal += rowTotal;
+
+                const descLines = this.wrapPdfTextForWidth(item.desc || '', descWidth, 8.6);
+                const lineCount = Math.max(descLines.length, 1);
+                const rowHeight = Math.max(24, (lineCount * 11) + 10);
+
+                if (y - rowHeight < bottomMargin) {
+                    finishPage();
+                    drawTableHeader();
+                }
+
+                let rowY = y;
+                descLines.forEach((descLine, index) => {
+                    text(descLine, descX, rowY, 8.6, index === 0 ? 'F2' : 'F1');
+                    rowY -= 11;
+                });
+
+                text(item.unit || 'Item', unitX, y, 8.6, 'F1');
+                text(String(qty), qtyX, y, 8.6, 'F1');
+                text(money(rate), rateX, y, 8.6, 'F1');
+                text(money(rowTotal), totalX, y, 8.6, 'F1');
+
+                y -= rowHeight;
+                line(margin, y + 4, rightMargin, y + 4);
+                y -= rowGap;
+            });
         }
 
-        if (pages.length === 0) pages.push(['Quote Proposal']);
+        const subtotalText = document.getElementById('preview-doc-subtotal')?.innerText || money(runningTotal);
+        const totalText = document.getElementById('preview-doc-total')?.innerText || money(runningTotal);
 
-        const contentStreams = pages.map((pageLines, pageIndex) => {
-            const commands = ['BT', '/F1 10 Tf', '50 800 Td'];
-            pageLines.forEach((line, lineIndex) => {
-                if (lineIndex > 0) commands.push('0 -15 Td');
-                commands.push(`(${this.escapePdfText(line)}) Tj`);
+        ensureSpace(78);
+        y -= 4;
+        line(330, y, rightMargin, y);
+        y -= 18;
+        text('Subtotal', 360, y, 10, 'F2');
+        text(subtotalText, 470, y, 10, 'F2');
+        y -= 18;
+        text('Total Proposed Tender Value', 330, y, 10.5, 'F2');
+        text(totalText, 470, y, 10.5, 'F2');
+        y -= 30;
+
+        ensureSpace(46);
+        text('3. VALUE ENGINEERING OPPORTUNITIES', margin, y, 12, 'F2');
+        y -= 18;
+
+        if (!Array.isArray(this.veOpportunities) || this.veOpportunities.length === 0) {
+            paragraph('Value engineering opportunities will appear once project analysis has completed.', margin, rightMargin - margin, 9, 12, 'F1');
+        } else {
+            this.veOpportunities.forEach((ve, index) => {
+                const saving = money(this.getLiveVeSaving(ve));
+                ensureSpace(42);
+                text(`${index + 1}. ${ve.title || 'Value Engineering Opportunity'} - Saving ${saving}`, margin, y, 9.5, 'F2');
+                y -= 13;
+                paragraph(ve.desc || '', margin + 12, rightMargin - margin - 12, 8.8, 12, 'F1');
+                y -= 6;
             });
-            commands.push('0 -24 Td');
-            commands.push(`(Page ${pageIndex + 1} of ${pages.length}) Tj`);
-            commands.push('ET');
-            return commands.join('\n');
+        }
+
+        ensureSpace(30);
+        y -= 8;
+        text(`Approved for submission by ${contact}`, margin, y, 9.5, 'F1');
+        finishPage();
+
+        const numberedPages = pages.map((pageCommands, index) => {
+            const footer = [
+                `0.75 w ${margin.toFixed(2)} 35.00 m ${rightMargin.toFixed(2)} 35.00 l S`,
+                `BT /F1 8 Tf ${margin.toFixed(2)} 22.00 Td (Page ${index + 1} of ${pages.length}) Tj ET`
+            ].join('\n');
+            return `${pageCommands}\n${footer}`;
         });
 
         const objects = [];
-        const pageIds = pages.map((_, index) => 4 + index * 2);
-        const contentIds = pages.map((_, index) => 5 + index * 2);
+        const pageIds = numberedPages.map((_, index) => 5 + index * 2);
+        const contentIds = numberedPages.map((_, index) => 6 + index * 2);
 
         objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
-        objects[2] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`;
-        objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+        objects[2] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${numberedPages.length} >>`;
+        objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+        objects[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
 
-        contentStreams.forEach((stream, index) => {
+        numberedPages.forEach((stream, index) => {
             const pageId = pageIds[index];
             const contentId = contentIds[index];
+            objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`;
             objects[contentId] = `<< /Length ${encoder.encode(stream).length} >>\nstream\n${stream}\nendstream`;
-            objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`;
         });
 
         let pdf = '%PDF-1.4\n';
         const offsets = [0];
 
         for (let i = 1; i < objects.length; i += 1) {
-            if (!objects[i]) continue;
             offsets[i] = encoder.encode(pdf).length;
             pdf += `${i} 0 obj\n${objects[i]}\nendobj\n`;
         }
@@ -314,8 +494,7 @@ class ProposalComponent {
         pdf += '0000000000 65535 f \n';
 
         for (let i = 1; i < objects.length; i += 1) {
-            const offset = offsets[i] || 0;
-            pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+            pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
         }
 
         pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
@@ -325,8 +504,7 @@ class ProposalComponent {
 
     downloadProposalPdf() {
         try {
-            const lines = this.getProposalPdfLines();
-            const blob = this.buildPdfBlob(lines);
+            const blob = this.buildProposalDocumentPdfBlob();
             const ref = (document.getElementById('preview-doc-ref')?.innerText || 'quote-proposal')
                 .replace(/[^a-z0-9-]+/gi, '-')
                 .replace(/-+/g, '-')
@@ -336,11 +514,12 @@ class ProposalComponent {
             const link = document.createElement('a');
             link.href = url;
             link.download = `${ref}.pdf`;
+            link.rel = 'noopener';
             document.body.appendChild(link);
             link.click();
             link.remove();
 
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            setTimeout(() => URL.revokeObjectURL(url), 3000);
         } catch (err) {
             console.error('PDF download failed, opening print dialog instead:', err);
             window.print();
