@@ -2859,3 +2859,71 @@ select option {
         padding-bottom: 80px !important;
     }
 }
+
+/* --- Real Mobile Pricing Card Renderer v9 --- */
+@media (max-width: 768px) {
+    #pricing-panel .mobile-pricing-card-row,
+    #pricing-panel .mobile-pricing-card-row td {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 0 10px 0 !important;
+        border: 0 !important;
+        background: transparent !important;
+    }
+
+    #pricing-panel .mobile-pricing-card-row td::before {
+        display: none !important;
+        content: none !important;
+    }
+
+    #pricing-panel .mobile-pricing-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 10px !important;
+        border-radius: 12px !important;
+        background: rgba(15, 23, 42, 0.82) !important;
+        border: 1px solid rgba(148, 163, 184, 0.16) !important;
+    }
+
+    #pricing-panel .mobile-pricing-title {
+        font-size: 13px !important;
+        line-height: 1.25 !important;
+        font-weight: 700 !important;
+        margin-bottom: 3px !important;
+    }
+
+    #pricing-panel .mobile-pricing-room {
+        font-size: 10px !important;
+        color: #94a3b8 !important;
+        margin-bottom: 8px !important;
+    }
+
+    #pricing-panel .mobile-pricing-grid {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        margin-bottom: 8px !important;
+    }
+
+    #pricing-panel .mobile-pricing-grid span {
+        display: block !important;
+        font-size: 9px !important;
+        text-transform: uppercase !important;
+        color: #64748b !important;
+        margin-bottom: 3px !important;
+    }
+
+    #pricing-panel .mobile-pricing-grid input,
+    #pricing-panel .mobile-pricing-grid select {
+        width: 100% !important;
+        height: 30px !important;
+        font-size: 12px !important;
+    }
+
+    #pricing-panel .mobile-pricing-adjust {
+        width: 100% !important;
+        height: 32px !important;
+        font-size: 12px !important;
+    }
+}

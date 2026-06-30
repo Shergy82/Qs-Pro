@@ -162,7 +162,7 @@ class PricingComponent {
     render(searchQuery = '', categoryFilter = 'all') {
         const tbody = document.getElementById('pricing-rates-tbody');
         if (!tbody) return;
-        
+
         tbody.innerHTML = '';
 
         const filtered = this.rates.filter(rate => {
@@ -176,38 +176,56 @@ class PricingComponent {
             return;
         }
 
-        filtered.forEach((r, idx) => {
+        const isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+
+        filtered.forEach((r) => {
             const tr = document.createElement('tr');
             const roomName = r.section || r.room || 'General';
             const shortDesc = (r.desc || '').length > 140 ? (r.desc || '').slice(0, 140).trim() + '…' : (r.desc || '');
-            tr.innerHTML = `
-                <td><input type="checkbox" class="pricing-row-select" value="${r.code}"></td>
-                <td><span class="badge badge-gray text-xs">${roomName}</span></td>
-                <td>
-                    <div class="font-semibold">${shortDesc}</div>
-                </td>
-                <td>
-                    <select class="form-input text-xs" style="background: #0e1422; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; width: 80px; color: var(--text-primary); outline: none; display: inline-block;" onchange="pricingComponent.updateRateUnit('${r.code}', this.value)">
-                        <option value="Nr" ${r.unit === 'Nr' ? 'selected' : ''}>Nr</option>
-                        <option value="m2" ${r.unit === 'm2' || r.unit === 'sqm' ? 'selected' : ''}>m²</option>
-                        <option value="m3" ${r.unit === 'm3' || r.unit === 'cum' ? 'selected' : ''}>m³</option>
-                        <option value="m" ${r.unit === 'm' || r.unit === 'lm' || r.unit === 'linear' ? 'selected' : ''}>m</option>
-                        <option value="Item" ${r.unit === 'Item' ? 'selected' : ''}>Item</option>
-                        <option value="Sum" ${r.unit === 'Sum' ? 'selected' : ''}>Sum</option>
-                        <option value="hr" ${r.unit === 'hr' || r.unit === 'hour' ? 'selected' : ''}>hr</option>
-                        <option value="day" ${r.unit === 'day' ? 'selected' : ''}>day</option>
-                        <option value="t" ${r.unit === 't' || r.unit === 'ton' ? 'selected' : ''}>t</option>
-                    </select>
-                </td>
-                <td class="text-right">
-                    <input type="number" class="form-input text-xs" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; width: 80px; text-align: right; color: var(--text-primary); outline: none; margin-left: auto;" value="${r.qty}" step="any" onchange="pricingComponent.updateRateQty('${r.code}', this.value)">
-                </td>
-                <td class="text-right">£${r.current.toFixed(2)}</td>
-                <td class="text-right font-bold text-emerald">£${(r.qty * r.current).toFixed(2)}</td>
-                <td class="text-right">
-                    <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.editRate('${r.code}')">Adjust</button>
-                </td>
+            const total = (r.qty * r.current).toFixed(2);
+
+            const unitOptions = `
+                <option value="Nr" ${r.unit === 'Nr' ? 'selected' : ''}>Nr</option>
+                <option value="m2" ${r.unit === 'm2' || r.unit === 'sqm' ? 'selected' : ''}>m²</option>
+                <option value="m3" ${r.unit === 'm3' || r.unit === 'cum' ? 'selected' : ''}>m³</option>
+                <option value="m" ${r.unit === 'm' || r.unit === 'lm' || r.unit === 'linear' ? 'selected' : ''}>m</option>
+                <option value="Item" ${r.unit === 'Item' ? 'selected' : ''}>Item</option>
+                <option value="Sum" ${r.unit === 'Sum' ? 'selected' : ''}>Sum</option>
+                <option value="hr" ${r.unit === 'hr' || r.unit === 'hour' ? 'selected' : ''}>hr</option>
+                <option value="day" ${r.unit === 'day' ? 'selected' : ''}>day</option>
+                <option value="t" ${r.unit === 't' || r.unit === 'ton' ? 'selected' : ''}>t</option>
             `;
+
+            if (isMobile) {
+                tr.className = 'mobile-pricing-card-row';
+                tr.innerHTML = `
+                    <td colspan="8">
+                        <div class="mobile-pricing-card">
+                            <div class="mobile-pricing-title">${shortDesc}</div>
+                            <div class="mobile-pricing-room">${roomName}</div>
+                            <div class="mobile-pricing-grid">
+                                <label><span>Unit</span><select class="form-input text-xs" onchange="pricingComponent.updateRateUnit('${r.code}', this.value)">${unitOptions}</select></label>
+                                <label><span>Qty</span><input type="number" class="form-input text-xs" value="${r.qty}" step="any" onchange="pricingComponent.updateRateQty('${r.code}', this.value)"></label>
+                                <div><span>Rate</span><strong>£${r.current.toFixed(2)}</strong></div>
+                                <div><span>Total</span><strong class="text-emerald">£${total}</strong></div>
+                            </div>
+                            <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.editRate('${r.code}')">Adjust</button>
+                        </div>
+                    </td>
+                `;
+            } else {
+                tr.innerHTML = `
+                    <td><input type="checkbox" class="pricing-row-select" value="${r.code}"></td>
+                    <td><span class="badge badge-gray text-xs">${roomName}</span></td>
+                    <td><div class="font-semibold">${shortDesc}</div></td>
+                    <td><select class="form-input text-xs" style="background: #0e1422; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; width: 80px; color: var(--text-primary); outline: none; display: inline-block;" onchange="pricingComponent.updateRateUnit('${r.code}', this.value)">${unitOptions}</select></td>
+                    <td class="text-right"><input type="number" class="form-input text-xs" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; width: 80px; text-align: right; color: var(--text-primary); outline: none; margin-left: auto;" value="${r.qty}" step="any" onchange="pricingComponent.updateRateQty('${r.code}', this.value)"></td>
+                    <td class="text-right">£${r.current.toFixed(2)}</td>
+                    <td class="text-right font-bold text-emerald">£${total}</td>
+                    <td class="text-right"><button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.editRate('${r.code}')">Adjust</button></td>
+                `;
+            }
+
             tbody.appendChild(tr);
         });
 
