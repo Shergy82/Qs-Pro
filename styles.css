@@ -2079,3 +2079,188 @@ select option {
     padding: 16px 0 0 0 !important;
     z-index: 5 !important;
 }
+/* --- Mobile App Layout Layer --- */
+@media (max-width: 768px) {
+    html,
+    body {
+        width: 100%;
+        min-width: 0;
+        overflow-x: hidden;
+    }
+
+    .app-container {
+        width: 100%;
+        min-height: 100dvh;
+        height: auto;
+        display: block;
+        padding-bottom: 76px;
+    }
+
+    .sidebar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        height: 72px;
+        z-index: 1000;
+        border-right: none;
+        border-top: 1px solid var(--border-color);
+        flex-direction: row;
+        overflow-x: auto;
+    }
+
+    .sidebar-brand,
+    .sidebar-footer {
+        display: none !important;
+    }
+
+    .sidebar-menu {
+        width: 100%;
+        padding: 8px;
+        flex-direction: row;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+    }
+
+    .sidebar-menu::-webkit-scrollbar {
+        display: none;
+    }
+
+    .menu-item {
+        min-width: 76px;
+        height: 56px;
+        padding: 6px 8px;
+        flex-direction: column;
+        justify-content: center;
+        gap: 4px;
+        font-size: 10px;
+        border-radius: 10px;
+        white-space: nowrap;
+    }
+
+    .menu-icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    .main-content {
+        width: 100%;
+        height: auto;
+        min-height: 100dvh;
+        overflow: visible;
+    }
+
+    .topbar {
+        height: auto;
+        min-height: 64px;
+        padding: 12px 14px;
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .topbar-left h2 {
+        font-size: 1.05rem;
+    }
+
+    .topbar-left p {
+        display: none;
+    }
+
+    .topbar-right {
+        margin-left: auto;
+        gap: 10px;
+    }
+
+    .panel {
+        padding: 14px;
+        overflow: visible;
+    }
+
+    .card {
+        padding: 16px;
+        border-radius: 14px;
+    }
+
+    .dashboard-grid,
+    .stats-row,
+    .pricing-container,
+    .takeoff-container,
+    .proposal-container,
+    .risk-top-grid,
+    .risk-bottom-grid {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 14px !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    .card-hero {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 14px;
+    }
+
+    .workspace-table-container,
+    .file-table-container,
+    .pricing-table-container,
+    .sor-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+        min-width: 720px;
+    }
+
+    .modal-overlay {
+        padding: 0 !important;
+        align-items: stretch !important;
+    }
+
+    .modal-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 100dvh !important;
+        max-height: 100dvh !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+    }
+
+    #import-preview-modal .modal-content {
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+    }
+
+    #import-wizard-step-3 {
+        flex-direction: column !important;
+        overflow-y: auto !important;
+    }
+
+    #import-wizard-step-3 > div:first-child {
+        width: 100% !important;
+        border-right: none !important;
+        border-bottom: 1px solid var(--border-color) !important;
+        padding-right: 0 !important;
+        padding-bottom: 12px !important;
+        max-height: 220px;
+    }
+
+    #import-rooms-selection-grid,
+    #import-rooms-dimensions-grid {
+        grid-template-columns: 1fr !important;
+        padding: 10px !important;
+    }
+
+    .btn,
+    button,
+    input,
+    select,
+    textarea {
+        min-height: 42px;
+    }
+}
