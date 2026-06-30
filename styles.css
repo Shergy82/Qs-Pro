@@ -2447,3 +2447,96 @@ select option {
         justify-content: center;
     }
 }
+
+/* --- Mobile Upload File Cards --- */
+@media (max-width: 768px) {
+    .file-list-card .card-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .file-list-card .card-header > div:last-child {
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+    }
+
+    .file-list-card .card-header .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .file-table-container {
+        overflow: visible !important;
+    }
+
+    .file-table {
+        min-width: 0 !important;
+        width: 100% !important;
+        border-collapse: separate !important;
+        border-spacing: 0 12px !important;
+    }
+
+    .file-table thead {
+        display: none !important;
+    }
+
+    .file-table,
+    .file-table tbody,
+    .file-table tr,
+    .file-table td {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .file-table tr {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    .file-table td {
+        border: none !important;
+        padding: 7px 0 !important;
+        display: flex !important;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+    }
+
+    .file-table td::before {
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        flex-shrink: 0;
+    }
+
+    .file-table td:nth-child(1)::before { content: "File"; }
+    .file-table td:nth-child(2)::before { content: "Size"; }
+    .file-table td:nth-child(3)::before { content: "Type"; }
+    .file-table td:nth-child(4)::before { content: "AI"; }
+    .file-table td:nth-child(5)::before { content: "Status"; }
+    .file-table td:nth-child(6)::before { content: "Action"; }
+
+    .file-table td:nth-child(1) {
+        font-weight: 700;
+        align-items: flex-start;
+    }
+
+    .file-table td:nth-child(4) {
+        align-items: flex-start;
+    }
+
+    .file-table td:nth-child(4) span {
+        text-align: right;
+        max-width: 68%;
+    }
+
+    .file-table td:nth-child(6) {
+        justify-content: flex-end !important;
+    }
+}
