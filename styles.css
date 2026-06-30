@@ -2540,3 +2540,83 @@ select option {
         justify-content: flex-end !important;
     }
 }
+
+/* --- Mobile Pricing Engine Cards --- */
+@media (max-width: 768px) {
+    #pricing-panel .pricing-table-container {
+        overflow: visible !important;
+    }
+
+    #pricing-panel .pricing-table {
+        min-width: 0 !important;
+        width: 100% !important;
+        border-collapse: separate !important;
+        border-spacing: 0 12px !important;
+    }
+
+    #pricing-panel .pricing-table thead {
+        display: none !important;
+    }
+
+    #pricing-panel .pricing-table,
+    #pricing-panel .pricing-table tbody,
+    #pricing-panel .pricing-table tr,
+    #pricing-panel .pricing-table td {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    #pricing-panel .pricing-table tr {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    #pricing-panel .pricing-table td {
+        border: none !important;
+        padding: 7px 0 !important;
+        display: flex !important;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+    }
+
+    #pricing-panel .pricing-table td::before {
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        flex-shrink: 0;
+    }
+
+    #pricing-panel .pricing-table td:nth-child(1)::before { content: "Select"; }
+    #pricing-panel .pricing-table td:nth-child(2)::before { content: "Room"; }
+    #pricing-panel .pricing-table td:nth-child(3)::before { content: "Description"; }
+    #pricing-panel .pricing-table td:nth-child(4)::before { content: "Unit"; }
+    #pricing-panel .pricing-table td:nth-child(5)::before { content: "Qty"; }
+    #pricing-panel .pricing-table td:nth-child(6)::before { content: "Rate"; }
+    #pricing-panel .pricing-table td:nth-child(7)::before { content: "Total"; }
+    #pricing-panel .pricing-table td:nth-child(8)::before { content: "Action"; }
+
+    #pricing-panel .pricing-table td:nth-child(3) {
+        align-items: flex-start;
+    }
+
+    #pricing-panel .pricing-table td:nth-child(3) > div {
+        max-width: 68%;
+        text-align: right;
+    }
+
+    #pricing-panel .pricing-table select,
+    #pricing-panel .pricing-table input[type="number"] {
+        max-width: 120px !important;
+    }
+
+    #pricing-panel .pricing-table td:nth-child(8) .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
