@@ -820,7 +820,7 @@
 
                             <div class="border-t pt-4 space-y-3" id="proposal-markup-container">
                                 <div class="flex items-center justify-between">
-                                    <label class="form-label mb-0" for="slider-proposal-markup">Rate Markup / Uplift (%)</label>
+                                    <label class="form-label mb-0" for="slider-proposal-markup">Company Cost Markup / Uplift (%)</label>
                                     <span class="value-highlight font-bold text-sm text-emerald" id="lbl-proposal-markup-val">0.0%</span>
                                 </div>
                                 <div class="flex items-center gap-3">
@@ -829,7 +829,7 @@
                                 </div>
                                 <label class="flex items-center gap-2 cursor-pointer mt-2">
                                     <input type="checkbox" id="chk-apply-markup-to-rates" checked class="form-checkbox">
-                                    <span>Distribute markup directly into schedule rates</span>
+                                    <span>Apply markup/uplift to proposal rates</span>
                                 </label>
                             </div>
 
@@ -877,12 +877,20 @@
                                         </tbody>
                                         <tfoot>
                                             <tr>
-                                                <td colspan="4" class="text-right font-bold">Subtotal (Net Cost):</td>
+                                                <td colspan="4" class="text-right font-bold">Cost to Company (0% Markup):</td>
                                                 <td class="text-right font-bold" id="preview-doc-subtotal">£0.00</td>
                                             </tr>
                                             <tr>
-                                                <td colspan="4" class="text-right">Risk Contingency allowance:</td>
-                                                <td class="text-right" id="preview-doc-contingency">£0.00</td>
+                                                <td colspan="4" class="text-right">Markup / Uplift Applied:</td>
+                                                <td class="text-right" id="preview-doc-markup">0.0%</td>
+                                            </tr>
+                                            <tr>
+                                                <td colspan="4" class="text-right">Profit:</td>
+                                                <td class="text-right" id="preview-doc-profit">£0.00</td>
+                                            </tr>
+                                            <tr>
+                                                <td colspan="4" class="text-right">Margin:</td>
+                                                <td class="text-right" id="preview-doc-margin">0.0%</td>
                                             </tr>
                                             <tr class="bg-highlight font-bold">
                                                 <td colspan="4" class="text-right">Total Proposed Tender Value:</td>
@@ -1414,10 +1422,10 @@
     <!-- JavaScript Files -->
     <script src="app.js?v=clean-2"></script>
     <script src="components/takeoff.js"></script>
-    <script src="components/pricing.js?v=mobile-12"></script>
+    <script src="components/pricing.js?v=mobile-cost-1"></script>
     <script src="components/library.js"></script>
     <script src="components/advisor.js"></script>
-    <script src="components/proposal.js?v=mobile-pdf-5"></script>
+    <script src="components/proposal.js?v=mobile-pdf-6"></script>
     <script>
         window.addEventListener('DOMContentLoaded', () => {
             const moreTrigger = document.querySelector('.mobile-more-trigger');

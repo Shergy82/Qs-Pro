@@ -1,4 +1,4 @@
-﻿/**
+/**
  * QS Pro AI - Pricing Engine & SOR Matcher Component
  */
 
@@ -10,6 +10,7 @@ class PricingComponent {
         this.sorItems = [];
         this.priceLibrary = [];
         this.addMode = 'library';
+        this.sorAppliedOrder = [];
     }
 
     init() {
@@ -783,11 +784,18 @@ class PricingComponent {
     applySORRatesToEstimate() {
         let appliedCount = 0;
         const promises = [];
-        this.sorItems.forEach(item => {
+        this.sorAppliedOrder = [];
+
+        this.sorItems.forEach((item, index) => {
             if (item.approved) {
                 const targetRate = this.rates.find(r => r.code === item.matchCode);
                 if (targetRate) {
                     targetRate.qty = item.qty;
+                    targetRate.unit = item.unit || targetRate.unit || 'Item';
+                    targetRate.sorOrderIndex = index;
+                    targetRate.sorRef = item.ref || '';
+                    targetRate.sorDesc = item.desc || targetRate.desc || '';
+                    this.sorAppliedOrder.push(String(targetRate.code));
                     appliedCount++;
                     promises.push(this.saveRateToBackend(targetRate));
                 }
@@ -849,7 +857,7 @@ class PricingComponent {
             this.roomMeasurements = {};
         }
 
-        this.rates = estimates.map(est => {
+        this.rates = estimates.map((est, index) => {
             const unitRate = (est.materialRate || 0) + (est.labourRate || 0) + (est.plantRate || 0) + (est.subRate || 0);
             
             let category = 'materials';
@@ -857,6 +865,8 @@ class PricingComponent {
             else if (est.plantRate > 0) category = 'plant';
             else if (est.subRate > 0) category = 'subcontractor';
             
+            const parsedOrder = Number(est.sorOrderIndex ?? est.sourceOrder ?? est.orderIndex ?? est.lineNumber ?? index);
+
             return {
                 code: est.id,
                 backendId: est.id,
@@ -871,7 +881,9 @@ class PricingComponent {
                 materialRate: est.materialRate || 0,
                 labourRate: est.labourRate || 0,
                 plantRate: est.plantRate || 0,
-                subRate: est.subRate || 0
+                subRate: est.subRate || 0,
+                sourceOrder: Number.isFinite(parsedOrder) ? parsedOrder : index,
+                sorOrderIndex: Number.isFinite(parsedOrder) ? parsedOrder : index
             };
         });
         

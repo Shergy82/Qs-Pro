@@ -205,9 +205,8 @@ class ProposalComponent {
         const ref = document.getElementById('preview-doc-ref')?.innerText || 'Proposal';
         const date = document.getElementById('preview-doc-date')?.innerText || new Date().toLocaleDateString('en-GB');
         const intro = document.getElementById('preview-doc-intro')?.innerText || '';
-        const subtotal = document.getElementById('preview-doc-subtotal')?.innerText || 'GBP 0.00';
-        const total = document.getElementById('preview-doc-total')?.innerText || 'GBP 0.00';
         const contact = document.getElementById('preview-doc-contact')?.innerText || 'Estimator';
+        const totals = this.calculateProposalTotals();
 
         const lines = [];
         lines.push('QUOTE PROPOSAL');
@@ -221,30 +220,28 @@ class ProposalComponent {
         lines.push('Description                                                     Unit   Qty     Rate        Total');
         lines.push('----------------------------------------------------------------------------------------------');
 
-        const items = window.app && app.pricing && Array.isArray(app.pricing.rates)
-            ? app.pricing.rates.filter(r => Number(r.qty) > 0)
-            : [];
-
-        const markupMultiplier = this.getProposalMarkupMultiplier();
-
-        if (items.length === 0) {
+        if (totals.items.length === 0) {
             lines.push('No cost items configured with quantities.');
         } else {
-            items.forEach(item => {
-                const qty = Number(item.qty) || 0;
-                const rate = (Number(item.current) || 0) * markupMultiplier;
+            totals.items.forEach(item => {
+                const qty = this.safePdfNumber(item.qty);
+                const rate = this.getCostItemBaseRate(item) * totals.multiplier;
                 const rowTotal = qty * rate;
-                const descLines = this.wrapPdfText(item.desc || '', 58);
+                const desc = item.sorDesc || item.desc || '';
+                const descLines = this.wrapPdfText(desc, 58);
                 const firstDesc = descLines.shift() || '';
-                const row = `${firstDesc.padEnd(60).slice(0, 60)} ${(item.unit || '').padEnd(5).slice(0, 5)} ${String(qty).padStart(5)} ${('GBP ' + rate.toFixed(2)).padStart(11)} ${('GBP ' + rowTotal.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).padStart(14)}`;
+                const row = `${firstDesc.padEnd(60).slice(0, 60)} ${(item.unit || 'Item').padEnd(5).slice(0, 5)} ${String(qty).padStart(5)} ${('GBP ' + rate.toFixed(2)).padStart(11)} ${('GBP ' + rowTotal.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).padStart(14)}`;
                 lines.push(row);
                 descLines.forEach(extra => lines.push(`  ${extra}`));
             });
         }
 
         lines.push('');
-        lines.push(`Subtotal: ${subtotal.replace(/£/g, 'GBP ')}`);
-        lines.push(`Total Proposed Tender Value: ${total.replace(/£/g, 'GBP ')}`);
+        lines.push(`Cost to Company: ${this.formatProposalMoney(totals.costTotal).replace(/£/g, 'GBP ')}`);
+        lines.push(`Markup / Uplift: ${totals.markupPercent.toFixed(1)}%`);
+        lines.push(`Profit: ${this.formatProposalMoney(totals.profit).replace(/£/g, 'GBP ')}`);
+        lines.push(`Margin: ${totals.marginPercent.toFixed(1)}%`);
+        lines.push(`Total Proposed Tender Value: ${this.formatProposalMoney(totals.sellTotal).replace(/£/g, 'GBP ')}`);
         lines.push('');
         lines.push('3. VALUE ENGINEERING OPPORTUNITIES');
 
@@ -293,6 +290,87 @@ class ProposalComponent {
 
     getPdfTextWidth(value, fontSize = 9) {
         return this.escapePdfLiteral(value).replace(/\\243/g, '£').length * fontSize * 0.52;
+    }
+
+    safePdfNumber(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : 0;
+    }
+
+    formatProposalMoney(value) {
+        return '£' + this.safePdfNumber(value).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    getProposalMarkupPercent() {
+        const sliderMarkup = document.getElementById('slider-proposal-markup');
+        const inputMarkup = document.getElementById('input-proposal-markup');
+        const value = sliderMarkup ? sliderMarkup.value : (inputMarkup ? inputMarkup.value : 0);
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    }
+
+    shouldApplyProposalMarkup() {
+        const chkApplyMarkup = document.getElementById('chk-apply-markup-to-rates');
+        return chkApplyMarkup ? chkApplyMarkup.checked : true;
+    }
+
+    getCostItemBaseRate(item) {
+        const componentTotal = this.safePdfNumber(item.materialRate) +
+            this.safePdfNumber(item.labourRate) +
+            this.safePdfNumber(item.plantRate) +
+            this.safePdfNumber(item.subRate);
+
+        if (componentTotal > 0) return componentTotal;
+        if (Number.isFinite(Number(item.company))) return this.safePdfNumber(item.company);
+        return this.safePdfNumber(item.current);
+    }
+
+    getOrderedCostItems() {
+        if (!window.app || !app.pricing || !Array.isArray(app.pricing.rates)) return [];
+
+        return app.pricing.rates
+            .map((item, index) => ({ ...item, __originalIndex: index }))
+            .filter(item => this.safePdfNumber(item.qty) > 0)
+            .sort((a, b) => {
+                const aSor = Number(a.sorOrderIndex ?? a.sourceOrder ?? a.orderIndex ?? a.lineNumber);
+                const bSor = Number(b.sorOrderIndex ?? b.sourceOrder ?? b.orderIndex ?? b.lineNumber);
+                const aHasSor = Number.isFinite(aSor);
+                const bHasSor = Number.isFinite(bSor);
+
+                if (aHasSor && bHasSor && aSor !== bSor) return aSor - bSor;
+                if (aHasSor && !bHasSor) return -1;
+                if (!aHasSor && bHasSor) return 1;
+                return a.__originalIndex - b.__originalIndex;
+            });
+    }
+
+    calculateProposalTotals() {
+        const items = this.getOrderedCostItems();
+        const markupPercent = this.shouldApplyProposalMarkup() ? this.getProposalMarkupPercent() : 0;
+        const multiplier = 1 + (markupPercent / 100);
+        let costTotal = 0;
+        let sellTotal = 0;
+
+        items.forEach(item => {
+            const qty = this.safePdfNumber(item.qty);
+            const costRate = this.getCostItemBaseRate(item);
+            const sellRate = costRate * multiplier;
+            costTotal += qty * costRate;
+            sellTotal += qty * sellRate;
+        });
+
+        const profit = sellTotal - costTotal;
+        const marginPercent = sellTotal > 0 ? (profit / sellTotal) * 100 : 0;
+
+        return {
+            items,
+            markupPercent,
+            multiplier,
+            costTotal,
+            sellTotal,
+            profit,
+            marginPercent
+        };
     }
 
     async loadProposalLogoForPdf() {
@@ -428,16 +506,13 @@ class ProposalComponent {
         text('2. COST SUMMARY', margin, y, 12, 'F2');
         y -= 22;
 
-        const items = window.app && app.pricing && Array.isArray(app.pricing.rates)
-            ? app.pricing.rates.filter(r => Number(r.qty) > 0)
-            : [];
-
-        const markupMultiplier = this.getProposalMarkupMultiplier();
+        const totals = this.calculateProposalTotals();
+        const items = totals.items;
         const descX = margin;
-        const unitX = 342;
-        const qtyX = 388;
-        const rateX = 425;
-        const totalX = 500;
+        const unitX = 346;
+        const qtyX = 386;
+        const rateRightX = 482;
+        const totalRightX = rightMargin - 2;
         const descWidth = 286;
         const rowGap = 6;
         let runningTotal = 0;
@@ -448,8 +523,8 @@ class ProposalComponent {
             text('Description', descX, y - 8, 8.5, 'F2');
             text('Unit', unitX, y - 8, 8.5, 'F2');
             text('Qty', qtyX, y - 8, 8.5, 'F2');
-            text('Rate', rateX, y - 8, 8.5, 'F2');
-            text('Total', totalX, y - 8, 8.5, 'F2');
+            textRight('Rate', rateRightX, y - 8, 8.5, 'F2');
+            textRight('Total', totalRightX, y - 8, 8.5, 'F2');
             y -= 30;
             line(margin, y + 7, rightMargin, y + 7);
         };
@@ -461,11 +536,11 @@ class ProposalComponent {
 
             items.forEach((item) => {
                 const qty = safeNumber(item.qty);
-                const rate = safeNumber(item.current) * markupMultiplier;
+                const rate = this.getCostItemBaseRate(item) * totals.multiplier;
                 const rowTotal = qty * rate;
                 runningTotal += rowTotal;
 
-                const descLines = this.wrapPdfTextForWidth(item.desc || '', descWidth, 8.6);
+                const descLines = this.wrapPdfTextForWidth(item.sorDesc || item.desc || '', descWidth, 8.6);
                 const lineCount = Math.max(descLines.length, 1);
                 const rowHeight = Math.max(24, (lineCount * 11) + 10);
 
@@ -482,8 +557,8 @@ class ProposalComponent {
 
                 text(item.unit || 'Item', unitX, y, 8.6, 'F1');
                 text(String(qty), qtyX, y, 8.6, 'F1');
-                text(money(rate), rateX, y, 8.6, 'F1');
-                text(money(rowTotal), totalX, y, 8.6, 'F1');
+                textRight(money(rate), rateRightX, y, 8.6, 'F1');
+                textRight(money(rowTotal), totalRightX, y, 8.6, 'F1');
 
                 y -= rowHeight;
                 line(margin, y + 4, rightMargin, y + 4);
@@ -491,22 +566,28 @@ class ProposalComponent {
             });
         }
 
-        const subtotalText = document.getElementById('preview-doc-subtotal')?.innerText || money(runningTotal);
-        const totalText = document.getElementById('preview-doc-total')?.innerText || money(runningTotal);
-
-        ensureSpace(92);
+        ensureSpace(118);
         y -= 4;
-        const summaryLeft = 315;
-        const summaryLabelRight = 438;
+        const summaryLeft = 286;
+        const summaryLabelRight = 450;
         const summaryValueRight = rightMargin - 4;
         line(summaryLeft, y, rightMargin, y);
+        y -= 16;
+        textRight('Cost to Company', summaryLabelRight, y, 9.5, 'F2');
+        textRight(money(totals.costTotal), summaryValueRight, y, 9.5, 'F2');
+        y -= 15;
+        textRight('Markup / Uplift', summaryLabelRight, y, 9.2, 'F1');
+        textRight(`${totals.markupPercent.toFixed(1)}%`, summaryValueRight, y, 9.2, 'F1');
+        y -= 15;
+        textRight('Profit', summaryLabelRight, y, 9.2, 'F1');
+        textRight(money(totals.profit), summaryValueRight, y, 9.2, 'F1');
+        y -= 15;
+        textRight('Margin', summaryLabelRight, y, 9.2, 'F1');
+        textRight(`${totals.marginPercent.toFixed(1)}%`, summaryValueRight, y, 9.2, 'F1');
         y -= 18;
-        textRight('Subtotal', summaryLabelRight, y, 10, 'F2');
-        textRight(subtotalText, summaryValueRight, y, 10, 'F2');
-        y -= 20;
         line(summaryLeft, y + 8, rightMargin, y + 8);
         textRight('Total Proposed Tender Value', summaryLabelRight, y, 10.5, 'F2');
-        textRight(totalText, summaryValueRight, y, 10.5, 'F2');
+        textRight(money(totals.sellTotal), summaryValueRight, y, 10.5, 'F2');
         y -= 32;
 
         ensureSpace(46);
@@ -803,47 +884,29 @@ class ProposalComponent {
         const tbody = document.getElementById('preview-breakdown-tbody');
         if (!tbody) return;
 
-        if (!window.app || !app.pricing || !Array.isArray(app.pricing.rates)) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-3">No cost items configured with quantities.</td></tr>`;
-            return;
-        }
-
+        const items = this.getOrderedCostItems();
         tbody.innerHTML = '';
-
-        // Loop active pricing items that have a quantity > 0
-        const items = app.pricing.rates.filter(r => Number(r.qty) > 0);
 
         if (items.length === 0) {
             tbody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary py-3">No cost items configured with quantities.</td></tr>`;
             return;
         }
 
-        const chkApplyMarkup = document.getElementById('chk-apply-markup-to-rates');
-        const applyMarkup = chkApplyMarkup ? chkApplyMarkup.checked : true;
-
-        const sliderMarkup = document.getElementById('slider-proposal-markup');
-        const markupPercent = sliderMarkup ? parseFloat(sliderMarkup.value) || 0 : 0;
-
-        let totalBase = 0;
-        let totalMarkedUp = 0;
+        const totals = this.calculateProposalTotals();
 
         items.forEach(item => {
-            const qty = Number(item.qty) || 0;
-            const current = Number(item.current) || 0;
-
-            const rowBaseTotal = qty * current;
-            totalBase += rowBaseTotal;
-
-            const rateDisplayed = applyMarkup ? current * (1 + markupPercent / 100) : current;
+            const qty = this.safePdfNumber(item.qty);
+            const costRate = this.getCostItemBaseRate(item);
+            const rateDisplayed = costRate * totals.multiplier;
             const rowTotalDisplayed = qty * rateDisplayed;
-            totalMarkedUp += rowTotalDisplayed;
+            const description = item.sorDesc || item.desc || '';
 
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>
-                    <div class="font-bold" style="color: #0f172a;">${item.desc || ''}</div>
+                    <div class="font-bold" style="color: #0f172a;">${description}</div>
                 </td>
-                <td>${item.unit || ''}</td>
+                <td>${item.unit || 'Item'}</td>
                 <td>${qty}</td>
                 <td class="text-right">£${rateDisplayed.toFixed(2)}</td>
                 <td class="text-right font-semibold">£${rowTotalDisplayed.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -852,72 +915,31 @@ class ProposalComponent {
             tbody.appendChild(tr);
         });
 
-        // Set summary values
-        const contingency = window.app && app.state ? Number(app.state.targetContingency) || 0 : 0;
-        const margin = window.app && app.state ? Number(app.state.targetMargin) || 0 : 0;
-
-        const contingencyAmt = totalBase * (contingency / 100);
-        const divisor = 1 - (margin / 100);
-        const finalBid = divisor > 0 ? (totalBase + contingencyAmt) / divisor : (totalBase + contingencyAmt);
-
         const table = document.querySelector('#preview-breakdown-section table');
-        const contingencyRow = document.getElementById('preview-doc-contingency')?.closest('tr');
         const subtotalLabelTd = document.getElementById('preview-doc-subtotal')?.previousElementSibling;
 
-        if (applyMarkup) {
-            // Update column headers to reflect Gross Rates
-            if (table) {
-                const headers = table.querySelectorAll('thead th');
-                if (headers.length >= 5) {
-                    headers[4].innerText = 'Total (£)';
-                }
+        if (table) {
+            const headers = table.querySelectorAll('thead th');
+            if (headers.length >= 5) {
+                headers[3].innerText = totals.markupPercent > 0 ? 'Unit Sell Rate (£)' : 'Unit Cost (£)';
+                headers[4].innerText = totals.markupPercent > 0 ? 'Sell Total (£)' : 'Cost Total (£)';
             }
-
-            // Hide contingency row
-            if (contingencyRow) {
-                contingencyRow.style.display = 'none';
-            }
-
-            // Update subtotal label and values
-            if (subtotalLabelTd) {
-                subtotalLabelTd.innerText = 'Subtotal (Gross Cost):';
-            }
-
-            this.setText('preview-doc-subtotal', '£' + totalMarkedUp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-            this.setText('preview-doc-total', '£' + totalMarkedUp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-        } else {
-            // Reset column headers to default Net Rates
-            if (table) {
-                const headers = table.querySelectorAll('thead th');
-                if (headers.length >= 5) {
-                    headers[4].innerText = 'Net Total (£)';
-                }
-            }
-
-            // Show contingency row
-            if (contingencyRow) {
-                contingencyRow.style.display = '';
-            }
-
-            // Update subtotal label and values
-            if (subtotalLabelTd) {
-                subtotalLabelTd.innerText = 'Subtotal (Net Cost):';
-            }
-
-            this.setText('preview-doc-subtotal', '£' + totalBase.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-            this.setText('preview-doc-contingency', '£' + contingencyAmt.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-            this.setText('preview-doc-total', '£' + finalBid.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
         }
+
+        if (subtotalLabelTd) {
+            subtotalLabelTd.innerText = 'Cost to Company (0% Markup):';
+        }
+
+        this.setText('preview-doc-subtotal', this.formatProposalMoney(totals.costTotal));
+        this.setText('preview-doc-markup', `${totals.markupPercent.toFixed(1)}%`);
+        this.setText('preview-doc-profit', this.formatProposalMoney(totals.profit));
+        this.setText('preview-doc-margin', `${totals.marginPercent.toFixed(1)}%`);
+        this.setText('preview-doc-total', this.formatProposalMoney(totals.sellTotal));
     }
 
     getProposalMarkupMultiplier() {
-        const chkApplyMarkup = document.getElementById('chk-apply-markup-to-rates');
-        const applyMarkup = chkApplyMarkup ? chkApplyMarkup.checked : true;
-
-        const sliderMarkup = document.getElementById('slider-proposal-markup');
-        const markupPercent = sliderMarkup ? parseFloat(sliderMarkup.value) || 0 : 0;
-
-        return applyMarkup ? (1 + markupPercent / 100) : 1;
+        const markupPercent = this.shouldApplyProposalMarkup() ? this.getProposalMarkupPercent() : 0;
+        return 1 + (markupPercent / 100);
     }
 
     getLiveVeSaving(ve) {
