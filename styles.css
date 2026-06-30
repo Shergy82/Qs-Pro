@@ -2620,3 +2620,163 @@ select option {
         justify-content: center;
     }
 }
+
+/* --- Mobile Pricing Engine Cards v7 hard override --- */
+@media (max-width: 768px) {
+    html,
+    body {
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+    }
+
+    #pricing-panel,
+    #pricing-panel * {
+        box-sizing: border-box !important;
+    }
+
+    #pricing-panel {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        padding-bottom: 96px !important;
+        overflow-x: hidden !important;
+    }
+
+    #pricing-panel .pricing-table-container,
+    #pricing-panel .table-container,
+    #pricing-panel .pricing-engine-table-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    #pricing-panel table,
+    #pricing-panel table.pricing-table,
+    #pricing-panel .pricing-table-container table {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        table-layout: auto !important;
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
+        overflow: visible !important;
+    }
+
+    #pricing-panel thead {
+        display: none !important;
+    }
+
+    #pricing-panel tbody {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    #pricing-panel tr {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        margin: 0 0 14px 0 !important;
+        padding: 12px !important;
+        border: 1px solid rgba(148, 163, 184, 0.18) !important;
+        border-radius: 14px !important;
+        background: rgba(15, 23, 42, 0.72) !important;
+        overflow: hidden !important;
+    }
+
+    #pricing-panel td {
+        display: flex !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        gap: 12px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        padding: 8px 0 !important;
+        border: 0 !important;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.10) !important;
+        text-align: right !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
+        color: #e5e7eb !important;
+    }
+
+    #pricing-panel td:last-child {
+        border-bottom: 0 !important;
+    }
+
+    #pricing-panel td::before {
+        flex: 0 0 92px !important;
+        max-width: 92px !important;
+        text-align: left !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.04em !important;
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        color: #94a3b8 !important;
+    }
+
+    #pricing-panel td:nth-child(1)::before { content: "Select" !important; }
+    #pricing-panel td:nth-child(2)::before { content: "Room" !important; }
+    #pricing-panel td:nth-child(3)::before { content: "Description" !important; }
+    #pricing-panel td:nth-child(4)::before { content: "Unit" !important; }
+    #pricing-panel td:nth-child(5)::before { content: "Qty" !important; }
+    #pricing-panel td:nth-child(6)::before { content: "Rate" !important; }
+    #pricing-panel td:nth-child(7)::before { content: "Total" !important; }
+    #pricing-panel td:nth-child(8)::before { content: "Action" !important; }
+
+    #pricing-panel td > * {
+        max-width: calc(100% - 104px) !important;
+        min-width: 0 !important;
+    }
+
+    #pricing-panel td:nth-child(8) {
+        display: block !important;
+        text-align: left !important;
+    }
+
+    #pricing-panel td:nth-child(8)::before {
+        display: block !important;
+        max-width: none !important;
+        margin-bottom: 8px !important;
+    }
+
+    #pricing-panel td:nth-child(8) > *,
+    #pricing-panel td:nth-child(8) button,
+    #pricing-panel td:nth-child(8) a,
+    #pricing-panel td:nth-child(8) input,
+    #pricing-panel td:nth-child(8) select {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    #pricing-panel input,
+    #pricing-panel select,
+    #pricing-panel textarea,
+    #pricing-panel button {
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    #pricing-panel .pricing-controls,
+    #pricing-panel .pricing-filters,
+    #pricing-panel .pricing-tabs,
+    #pricing-panel .pricing-toolbar,
+    #pricing-panel .database-controls {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        gap: 8px !important;
+        overflow: hidden !important;
+    }
+}
