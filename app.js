@@ -88,7 +88,13 @@ class QSProApp {
             data = await response.json().catch(() => null);
         } else {
             const text = await response.text().catch(() => '');
-            data = text ? { error: text } : null;
+const looksLikeHtml = text.trim().toLowerCase().startsWith('<!doctype') || text.trim().toLowerCase().startsWith('<html');
+
+if (looksLikeHtml) {
+    data = { error: response.status === 502 ? 'AI import service temporarily unavailable. Please retry in 30 seconds.' : 'Server returned an invalid HTML error page. Please try again.' };
+} else {
+    data = text ? { error: text } : null;
+}
         }
 
         if (!response.ok) {
@@ -1206,7 +1212,7 @@ class QSProApp {
 
             card.innerHTML = `
                 <div class="text-xs font-semibold text-primary" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px; margin-bottom: 4px;">
-                    <span>ðŸ“ ${this.escapeHtml(room)}</span>
+                    <span>${this.escapeHtml(room)}</span>
                 </div>
                 <div style="display: flex; gap: 8px;">
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
@@ -1247,7 +1253,7 @@ class QSProApp {
             card.style.gap = '4px';
 
             card.innerHTML = `
-                <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">ðŸ“ ${this.escapeHtml(room)}</span>
+                <span style="font-size: 11px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(room)}</span>
                 <div style="display: flex; gap: 4px;">
                     <input type="number" step="0.01" class="form-input text-xs" style="padding: 4px; text-align: right; background: rgba(0,0,0,0.25); flex: 1;" placeholder="W" value="${dims.width}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'width', this.value)">
                     <input type="number" step="0.01" class="form-input text-xs" style="padding: 4px; text-align: right; background: rgba(0,0,0,0.25); flex: 1;" placeholder="L" value="${dims.length}" oninput="app.updateRoomDimension('${this.escapeHtml(room).replace(/'/g, "\\'")}', 'length', this.value)">
@@ -1317,9 +1323,9 @@ class QSProApp {
         const descLower = (description || '').toLowerCase();
         const unitLower = (unit || '').toLowerCase().trim();
 
-        const isM2 = ['m2', 'mÂ²', 'sqm', 'sq.m', 'sq m'].includes(unitLower);
+        const isM2 = ['m2', 'm\u00b2', 'sqm', 'sq.m', 'sq m'].includes(unitLower);
         const isM = ['m', 'lm', 'linear', 'linear meter', 'l.m'].includes(unitLower);
-        const isM3 = ['m3', 'mÂ³'].includes(unitLower);
+        const isM3 = ['m3', 'm\u00b3'].includes(unitLower);
 
         // ONLY calculate quantities for dimensional units
         if (!isM2 && !isM && !isM3) {
@@ -1798,6 +1804,7 @@ window.addEventListener('DOMContentLoaded', () => {
         app.advisor.populateDashboardQuickList();
     }
 });
+
 
 
 

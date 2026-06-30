@@ -276,7 +276,7 @@ function localHeuristicExcelParser(filePath) {
         if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
           // Check if it's a continuation of the previous item
           const looksLikeContinuation =
-            description.trim().startsWith('â€¢') ||
+            description.trim().startsWith('\u2022') ||
             description.trim().startsWith('-') ||
             description.trim().startsWith('*') ||
             /^[a-z]/.test(description.trim()) ||
@@ -2306,42 +2306,42 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
 
 function localQSChatFallback(message, contextPrompt) {
   const msg = (message || '').toLowerCase();
-  let text = `### ðŸ› ï¸ TrueCost QS - Offline Estimator Companion\n\n*Note: Your Gemini API Key is offline or has reached its quota limit. I am operating in high-fidelity offline mode to guide your project.* \n\n`;
+  let text = `### TrueCost QS - Offline Estimator Companion\n\n*Note: Your Gemini API Key is offline or has reached its quota limit. I am operating in high-fidelity offline mode to guide your project.* \n\n`;
 
   if (msg.includes('plaster') || msg.includes('skim') || msg.includes('board') || msg.includes('dryline')) {
-    text += `#### ðŸ“‹ Plastering & Finishes Guidance
+    text += `#### Plastering & Finishes Guidance
 - **Materials**: Standard 12.5mm plasterboard sheets are priced around **£8.50/sheet** (Travis Perkins/Selco). Thistle multi-finish plaster is **£8.20/25kg bag** (covers approx. 10m² at 2mm thickness).
 - **Labour Daily Productivity**: 1 plasterer + 1 labourer can typically tackle **10m² to 15m² per day** of 2-coat skim, or **35m² to 50m² per day** of plasterboard boarding.
 - **Estimated Rates**: Budget **£18.00 to £25.00 per m²** for supply, board, and skim works in standard rooms. Add **10% waste allowance** for cutting board partitions.`;
   } else if (msg.includes('timber') || msg.includes('joiner') || msg.includes('skirting') || msg.includes('door') || msg.includes('stud')) {
-    text += `#### ðŸªš Joinery & Timber Works Guidance
+    text += `#### Joinery & Timber Works Guidance
 - **Materials**: Standard treated CLS stud timber (38x89x2400mm) is approx. **£3.45/length** (Jewson/Travis). MDF Ogee skirting (120mm x 4.4m twice-primed) is **£14.20/length**. Standard trade internal pre-finished doors are **£45.00 to £90.00 each**.
 - **Labour Daily Productivity**: A skilled carpenter can install **20m to 30m of skirting per day**, or hang **4 to 6 internal doors per day**.
 - **Estimated Rates**: Timber stud partition walls: **£35.00 to £50.00 per m²** (including studs, rockwool insulation, and boarding). Architraves/skirtings: **£8.00 per linear meter**.`;
   } else if (msg.includes('concrete') || msg.includes('foundation') || msg.includes('ground') || msg.includes('excavate') || msg.includes('cement')) {
-    text += `#### ðŸ—ï¸ Groundworks & Foundations Guidance
+    text += `#### Groundworks & Foundations Guidance
 - **Materials**: Volumetric ready-mix C25 concrete is approx. **£95.00 to £115.00 per m³** delivered. Rugby premium cement is **£6.50/25kg bag**.
 - **Labour / Equipment**: Standard 1.5t mini excavator hire is **£120.00/day** (excluding operator). Groundworker daily rate is **£200.00/day**.
 - **Estimated Rates**: Concrete strip foundation (excavate, backfill C25): **£180.00 to £240.00 per m³**. Skip hire (8-yard standard builder): **£280.00 to £350.00** per load.`;
   } else if (msg.includes('asbestos') || msg.includes('demolition') || msg.includes('downtaking')) {
-    text += `#### âš ï¸ Asbestos & Demolition safety regulations (UK CAR 2012)
+    text += `#### Asbestos & Demolition safety regulations (UK CAR 2012)
 - **Regulations**: Under **Control of Asbestos Regulations 2012**, all asbestos cement roofing, ridges, or tiling must be identified before demolition. 
 - **Handling**: While chrysotile (white asbestos) cement sheets can be handled by trained, competent contractors under non-licensed work rules, it must be double-bagged, handled without breaking, and placed in a sealed hazardous-waste skip.
 - **Costs**: Sealed hazardous skips range from **£280.00 to £450.00**. Expert non-licensed removal and disposal of roofing sheets budgets around **£45.00 to £65.00 per m²**.`;
   } else if (msg.includes('margin') || msg.includes('contingency') || msg.includes('markup') || msg.includes('uplift') || msg.includes('waste')) {
-    text += `#### ðŸ“ˆ RICS-Compliant Markups & Cost Control
+    text += `#### RICS-Compliant Markups & Cost Control
 - **Residential Margin**: Standard contractor markups for residential extensions or refurbs range from **15% to 22.5%** depending on access and complexity.
 - **Commercial Margin**: Larger commercial works usually target **5% to 10%** overhead and profit margins.
 - **Waste Allowances**: Standard materials waste allowances are **10% for plasterboard/timber**, **5% for cement/aggregate bags**, and **2.5% for general items**.
 - **Contingency**: Maintain a **5% to 7.5% contingency fund** for hidden refurbishment works (especially foundations and old brickwork strip-outs).`;
   } else if (msg.includes('rate') || msg.includes('cost') || msg.includes('price') || msg.includes('pay')) {
-    text += `#### ðŸ’· Standard Trade Rates & Labour Day Indexes
+    text += `#### Standard Trade Rates & Labour Day Indexes
 - **Plasterer / Carpenter / Bricklayer / Plumber**: Standard trade daily rates across the UK average **£200.00 to £250.00 per day** (£25.00 to £32.00/hr).
 - **Electrician**: Averages **£250.00 to £300.00 per day** (£30.00 to £38.00/hr).
 - **General Labourer**: Averages **£120.00 to £150.00 per day** (£15.00 to £18.50/hr).
 - *Tip: You can manually override any specific labor days or trade daily rate directly inside the "Rate Build-up" tab in your Estimate Builder panel on the right side of the screen.*`;
   } else {
-    text += `#### ðŸ§  Quantity Surveying Cost Companion
+    text += `#### Quantity Surveying Cost Companion
 How can I assist you with your estimating project today? Ask me about:
 - **Materials Cost**: Plasterboard sheets, timber CLS studs, paint emulsions, copper pipes, concrete mixes.
 - **Labour day rates & productivity indexes** for Plasterers, Carpenters, Groundworkers, and Electricians.
@@ -3451,3 +3451,5 @@ module.exports = {
   localQSChatFallback,
   extractRoomFromDescription
 };
+
+
