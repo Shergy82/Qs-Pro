@@ -379,6 +379,12 @@ if (looksLikeHtml) {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
                 const panelName = item.getAttribute('data-panel');
+                if (panelName === 'mobile-more') {
+                    document.body.classList.toggle('mobile-more-open');
+                    return;
+                }
+
+                document.body.classList.remove('mobile-more-open');
                 if (panelName) this.switchPanel(panelName);
             });
         });
@@ -1814,6 +1820,7 @@ window.addEventListener('DOMContentLoaded', () => {
         app.advisor.populateDashboardQuickList();
     }
 });
+
 
 
 

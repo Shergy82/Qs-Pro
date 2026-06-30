@@ -2264,3 +2264,104 @@ select option {
         min-height: 42px;
     }
 }
+
+/* --- Mobile App Navigation v3 --- */
+.mobile-more-trigger {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .app-container {
+        padding-bottom: 86px !important;
+    }
+
+    .sidebar {
+        height: 76px !important;
+        overflow: visible !important;
+    }
+
+    .sidebar-menu {
+        display: grid !important;
+        grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+        gap: 4px !important;
+        padding: 8px 6px !important;
+        overflow: visible !important;
+    }
+
+    .mobile-more-trigger {
+        display: flex !important;
+    }
+
+    .mobile-secondary {
+        display: none !important;
+    }
+
+    .menu-item {
+        min-width: 0 !important;
+        width: 100% !important;
+        height: 58px !important;
+        padding: 6px 3px !important;
+        font-size: 9px !important;
+        line-height: 1.05 !important;
+        text-align: center !important;
+        white-space: normal !important;
+        justify-content: center !important;
+    }
+
+    .menu-item span {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .menu-icon {
+        width: 18px !important;
+        height: 18px !important;
+    }
+
+    body.mobile-more-open::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 998;
+    }
+
+    body.mobile-more-open .mobile-secondary {
+        position: fixed !important;
+        left: 14px;
+        right: 14px;
+        height: 48px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: flex-start !important;
+        gap: 10px !important;
+        padding: 0 14px !important;
+        background: var(--bg-secondary) !important;
+        border: 1px solid var(--border-color) !important;
+        border-radius: 12px !important;
+        z-index: 1001 !important;
+        font-size: 13px !important;
+        text-align: left !important;
+    }
+
+    body.mobile-more-open .mobile-secondary:nth-of-type(6) {
+        bottom: 286px;
+    }
+
+    body.mobile-more-open .mobile-secondary:nth-of-type(7) {
+        bottom: 232px;
+    }
+
+    body.mobile-more-open .mobile-secondary:nth-of-type(8) {
+        bottom: 178px;
+    }
+
+    body.mobile-more-open .mobile-secondary:nth-of-type(9) {
+        bottom: 124px;
+    }
+
+    .panel {
+        padding-bottom: 96px !important;
+    }
+}

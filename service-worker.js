@@ -1,10 +1,10 @@
-﻿const CACHE_NAME = 'qs-pro-ai-pwa-v1';
+﻿const CACHE_NAME = 'qs-pro-ai-pwa-v2';
 
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/styles.css?v=mobile-1',
-  '/app.js?v=clean-1',
+  '/styles.css?v=mobile-3',
+  '/app.js?v=clean-2',
   '/components/takeoff.js',
   '/components/pricing.js',
   '/components/library.js',
@@ -37,3 +37,4 @@ self.addEventListener('fetch', event => {
     fetch(event.request).catch(() => caches.match(event.request))
   );
 });
+
