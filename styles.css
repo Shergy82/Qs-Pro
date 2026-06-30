@@ -2780,3 +2780,82 @@ select option {
         overflow: hidden !important;
     }
 }
+
+/* --- Mobile Pricing Engine Compact Cards v8 --- */
+@media (max-width: 768px) {
+    #pricing-panel tr {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px 10px !important;
+        padding: 10px !important;
+        margin-bottom: 10px !important;
+        border-radius: 12px !important;
+    }
+
+    #pricing-panel td {
+        display: block !important;
+        width: 100% !important;
+        padding: 0 !important;
+        border-bottom: 0 !important;
+        text-align: left !important;
+        font-size: 12px !important;
+        line-height: 1.35 !important;
+    }
+
+    #pricing-panel td::before {
+        display: block !important;
+        flex: none !important;
+        max-width: none !important;
+        margin-bottom: 2px !important;
+        font-size: 9px !important;
+        line-height: 1 !important;
+        color: #64748b !important;
+    }
+
+    #pricing-panel td:nth-child(1),
+    #pricing-panel td:nth-child(2) {
+        display: none !important;
+    }
+
+    #pricing-panel td:nth-child(3) {
+        grid-column: 1 / -1 !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        color: #f8fafc !important;
+        padding-bottom: 4px !important;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.12) !important;
+    }
+
+    #pricing-panel td:nth-child(3)::before {
+        content: "Description" !important;
+    }
+
+    #pricing-panel td:nth-child(8) {
+        grid-column: 1 / -1 !important;
+        display: block !important;
+        padding-top: 4px !important;
+    }
+
+    #pricing-panel td:nth-child(8)::before {
+        content: "Action" !important;
+        margin-bottom: 4px !important;
+    }
+
+    #pricing-panel td:nth-child(8) input,
+    #pricing-panel td:nth-child(8) select,
+    #pricing-panel td:nth-child(8) button,
+    #pricing-panel td:nth-child(8) a {
+        width: 100% !important;
+        height: 34px !important;
+        min-height: 34px !important;
+        font-size: 12px !important;
+    }
+
+    #pricing-panel td > * {
+        max-width: 100% !important;
+    }
+
+    #pricing-panel .pricing-table-container {
+        padding-bottom: 80px !important;
+    }
+}
