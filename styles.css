@@ -2365,3 +2365,85 @@ select option {
         padding-bottom: 96px !important;
     }
 }
+
+/* --- Mobile Dashboard Workspace Cards --- */
+@media (max-width: 768px) {
+    .card-workspace .card-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    .card-workspace .card-header .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .workspace-table-container {
+        overflow: visible !important;
+    }
+
+    .workspace-table {
+        min-width: 0 !important;
+        width: 100% !important;
+        border-collapse: separate !important;
+        border-spacing: 0 12px !important;
+    }
+
+    .workspace-table thead {
+        display: none !important;
+    }
+
+    .workspace-table,
+    .workspace-table tbody,
+    .workspace-table tr,
+    .workspace-table td {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .workspace-table tr {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    .workspace-table td {
+        border: none !important;
+        padding: 7px 0 !important;
+        display: flex !important;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+    }
+
+    .workspace-table td::before {
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        flex-shrink: 0;
+    }
+
+    .workspace-table td:nth-child(1)::before { content: "Project"; }
+    .workspace-table td:nth-child(2)::before { content: "Client"; }
+    .workspace-table td:nth-child(3)::before { content: "Due"; }
+    .workspace-table td:nth-child(4)::before { content: "Value"; }
+    .workspace-table td:nth-child(5)::before { content: "Status"; }
+    .workspace-table td:nth-child(6)::before { content: "Health"; }
+    .workspace-table td:nth-child(7)::before { content: "Actions"; }
+
+    .workspace-table td:nth-child(7) > div {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px !important;
+    }
+
+    .workspace-table td:nth-child(7) .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
