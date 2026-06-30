@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=mobile-11">
+    <link rel="stylesheet" href="styles.css?v=mobile-12">
     <link rel="manifest" href="/manifest.webmanifest">
     <meta name="theme-color" content="#6366f1">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -525,6 +525,38 @@
                 </div>
             </section>
 
+            <!-- Mobile More Panel -->
+            <section class="panel" id="mobile-more-panel">
+                <div class="mobile-more-page card">
+                    <div class="mobile-more-page-header">
+                        <h3>More Tools</h3>
+                        <p class="text-secondary">Choose the pricing tool you want to open.</p>
+                    </div>
+                    <div class="mobile-more-page-grid">
+                        <button type="button" class="mobile-more-page-item" onclick="app.switchPanel('library')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                            <span>Price Library</span>
+                            <strong>Global rate book and labour rates</strong>
+                        </button>
+                        <button type="button" class="mobile-more-page-item" onclick="app.switchPanel('sor')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14H4v7h5v-7zM19 14h-5v7h5v-7zM9 3H4v7h5V3zM19 3h-5v7h5V3z"/></svg>
+                            <span>SOR Matcher</span>
+                            <strong>Map client SORs to your rates</strong>
+                        </button>
+                        <button type="button" class="mobile-more-page-item" onclick="app.switchPanel('risk')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            <span>Risk & Profit</span>
+                            <strong>Risk review, margin and contingency</strong>
+                        </button>
+                        <button type="button" class="mobile-more-page-item" onclick="app.switchPanel('proposal')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                            <span>Proposal Generator</span>
+                            <strong>Preview and download quote PDF</strong>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
             <!-- Price Library Panel -->
             <section class="panel" id="library-panel">
                 <div class="library-container" style="display: grid; grid-template-columns: 1fr; gap: 24px;">
@@ -803,7 +835,7 @@
 
                             <button type="button" class="btn btn-primary w-full mt-6" id="btn-print-proposal">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-                                <span>Generate Proposal PDF</span>
+                                <span>Download Proposal PDF</span>
                             </button>
                         </form>
                     </div>
@@ -1382,10 +1414,27 @@
     <!-- JavaScript Files -->
     <script src="app.js?v=clean-2"></script>
     <script src="components/takeoff.js"></script>
-    <script src="components/pricing.js"></script>
+    <script src="components/pricing.js?v=mobile-12"></script>
     <script src="components/library.js"></script>
     <script src="components/advisor.js"></script>
-    <script src="components/proposal.js?v=ve-live-2"></script>
+    <script src="components/proposal.js?v=mobile-pdf-3"></script>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const moreTrigger = document.querySelector('.mobile-more-trigger');
+            if (moreTrigger) {
+                moreTrigger.addEventListener('click', (event) => {
+                    if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        document.body.classList.remove('mobile-more-open');
+                        if (window.app && typeof app.switchPanel === 'function') {
+                            app.switchPanel('mobile-more');
+                        }
+                    }
+                }, true);
+            }
+        });
+    </script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

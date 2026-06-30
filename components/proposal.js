@@ -111,9 +111,9 @@ class ProposalComponent {
             }
         });
 
-        // Print trigger
+        // Mobile-friendly PDF download trigger
         this.safelyAddListener('btn-print-proposal', 'click', () => {
-            window.print();
+            this.downloadProposalPdf();
         });
 
         // Markup controls event listeners
@@ -163,6 +163,187 @@ class ProposalComponent {
                 this.renderBreakdownTable();
                 this.renderValueEngineering();
             });
+        }
+    }
+
+    escapePdfText(value) {
+        return String(value ?? '')
+            .replace(/£/g, 'GBP ')
+            .replace(/[“”]/g, '"')
+            .replace(/[‘’]/g, "'")
+            .replace(/[–—]/g, '-')
+            .replace(/\\/g, '\\\\')
+            .replace(/\(/g, '\\(')
+            .replace(/\)/g, '\\)')
+            .replace(/[\r\n\t]+/g, ' ')
+            .replace(/[^\x20-\x7E]/g, ' ')
+            .trim();
+    }
+
+    wrapPdfText(value, maxChars = 86) {
+        const words = this.escapePdfText(value).split(/\s+/).filter(Boolean);
+        const lines = [];
+        let line = '';
+
+        words.forEach(word => {
+            const next = line ? `${line} ${word}` : word;
+            if (next.length > maxChars && line) {
+                lines.push(line);
+                line = word;
+            } else {
+                line = next;
+            }
+        });
+
+        if (line) lines.push(line);
+        return lines.length ? lines : [''];
+    }
+
+    getProposalPdfLines() {
+        this.render();
+
+        const ref = document.getElementById('preview-doc-ref')?.innerText || 'Proposal';
+        const date = document.getElementById('preview-doc-date')?.innerText || new Date().toLocaleDateString('en-GB');
+        const intro = document.getElementById('preview-doc-intro')?.innerText || '';
+        const subtotal = document.getElementById('preview-doc-subtotal')?.innerText || 'GBP 0.00';
+        const total = document.getElementById('preview-doc-total')?.innerText || 'GBP 0.00';
+        const contact = document.getElementById('preview-doc-contact')?.innerText || 'Estimator';
+
+        const lines = [];
+        lines.push('QUOTE PROPOSAL');
+        lines.push(`Reference: ${ref}`);
+        lines.push(`Date: ${date}`);
+        lines.push('');
+        lines.push('1. EXECUTIVE SUMMARY');
+        lines.push(...this.wrapPdfText(intro, 92));
+        lines.push('');
+        lines.push('2. COST SUMMARY');
+        lines.push('Description                                                     Unit   Qty     Rate        Total');
+        lines.push('----------------------------------------------------------------------------------------------');
+
+        const items = window.app && app.pricing && Array.isArray(app.pricing.rates)
+            ? app.pricing.rates.filter(r => Number(r.qty) > 0)
+            : [];
+
+        const markupMultiplier = this.getProposalMarkupMultiplier();
+
+        if (items.length === 0) {
+            lines.push('No cost items configured with quantities.');
+        } else {
+            items.forEach(item => {
+                const qty = Number(item.qty) || 0;
+                const rate = (Number(item.current) || 0) * markupMultiplier;
+                const rowTotal = qty * rate;
+                const descLines = this.wrapPdfText(item.desc || '', 58);
+                const firstDesc = descLines.shift() || '';
+                const row = `${firstDesc.padEnd(60).slice(0, 60)} ${(item.unit || '').padEnd(5).slice(0, 5)} ${String(qty).padStart(5)} ${('GBP ' + rate.toFixed(2)).padStart(11)} ${('GBP ' + rowTotal.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).padStart(14)}`;
+                lines.push(row);
+                descLines.forEach(extra => lines.push(`  ${extra}`));
+            });
+        }
+
+        lines.push('');
+        lines.push(`Subtotal: ${subtotal.replace(/£/g, 'GBP ')}`);
+        lines.push(`Total Proposed Tender Value: ${total.replace(/£/g, 'GBP ')}`);
+        lines.push('');
+        lines.push('3. VALUE ENGINEERING OPPORTUNITIES');
+
+        if (!Array.isArray(this.veOpportunities) || this.veOpportunities.length === 0) {
+            lines.push('Value engineering opportunities will appear once project analysis has completed.');
+        } else {
+            this.veOpportunities.forEach((ve, index) => {
+                lines.push(`${index + 1}. ${ve.title || 'Value Engineering Opportunity'} - Saving GBP ${this.getLiveVeSaving(ve).toLocaleString('en-GB')}`);
+                lines.push(...this.wrapPdfText(ve.desc || '', 92));
+            });
+        }
+
+        lines.push('');
+        lines.push(`Approved for submission by ${contact}`);
+        return lines;
+    }
+
+    buildPdfBlob(lines) {
+        const encoder = new TextEncoder();
+        const pageLineLimit = 48;
+        const pages = [];
+
+        for (let i = 0; i < lines.length; i += pageLineLimit) {
+            pages.push(lines.slice(i, i + pageLineLimit));
+        }
+
+        if (pages.length === 0) pages.push(['Quote Proposal']);
+
+        const contentStreams = pages.map((pageLines, pageIndex) => {
+            const commands = ['BT', '/F1 10 Tf', '50 800 Td'];
+            pageLines.forEach((line, lineIndex) => {
+                if (lineIndex > 0) commands.push('0 -15 Td');
+                commands.push(`(${this.escapePdfText(line)}) Tj`);
+            });
+            commands.push('0 -24 Td');
+            commands.push(`(Page ${pageIndex + 1} of ${pages.length}) Tj`);
+            commands.push('ET');
+            return commands.join('\n');
+        });
+
+        const objects = [];
+        const pageIds = pages.map((_, index) => 4 + index * 2);
+        const contentIds = pages.map((_, index) => 5 + index * 2);
+
+        objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+        objects[2] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`;
+        objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+
+        contentStreams.forEach((stream, index) => {
+            const pageId = pageIds[index];
+            const contentId = contentIds[index];
+            objects[contentId] = `<< /Length ${encoder.encode(stream).length} >>\nstream\n${stream}\nendstream`;
+            objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`;
+        });
+
+        let pdf = '%PDF-1.4\n';
+        const offsets = [0];
+
+        for (let i = 1; i < objects.length; i += 1) {
+            if (!objects[i]) continue;
+            offsets[i] = encoder.encode(pdf).length;
+            pdf += `${i} 0 obj\n${objects[i]}\nendobj\n`;
+        }
+
+        const xrefOffset = encoder.encode(pdf).length;
+        pdf += `xref\n0 ${objects.length}\n`;
+        pdf += '0000000000 65535 f \n';
+
+        for (let i = 1; i < objects.length; i += 1) {
+            const offset = offsets[i] || 0;
+            pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+        }
+
+        pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+        return new Blob([encoder.encode(pdf)], { type: 'application/pdf' });
+    }
+
+    downloadProposalPdf() {
+        try {
+            const lines = this.getProposalPdfLines();
+            const blob = this.buildPdfBlob(lines);
+            const ref = (document.getElementById('preview-doc-ref')?.innerText || 'quote-proposal')
+                .replace(/[^a-z0-9-]+/gi, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '') || 'quote-proposal';
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${ref}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (err) {
+            console.error('PDF download failed, opening print dialog instead:', err);
+            window.print();
         }
     }
 
