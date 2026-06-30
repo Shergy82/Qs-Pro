@@ -1056,6 +1056,18 @@ if (looksLikeHtml) {
         this.state.importPreviewFilter = '';
 
         // Extract all unique room/section names from items (without ignoring any)
+        this.state.importPreview.items = (this.state.importPreview.items || []).map(item => {
+            const cleanSection = String(item.section || 'General')
+                .replace(/^[^A-Za-z0-9]+/, '')
+                .replace(/\s+/g, ' ')
+                .trim() || 'General';
+
+            return {
+                ...item,
+                section: cleanSection
+            };
+        });
+
         const allRooms = [...new Set(this.state.importPreview.items.map(item => item.section || 'General').filter(r => r && r.trim() !== ''))];
         allRooms.sort();
 
@@ -1804,6 +1816,7 @@ window.addEventListener('DOMContentLoaded', () => {
         app.advisor.populateDashboardQuickList();
     }
 });
+
 
 
 
