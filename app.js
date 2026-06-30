@@ -1069,7 +1069,7 @@ if (looksLikeHtml) {
         });
 
         const allRooms = [...new Set(this.state.importPreview.items.map(item => item.section || 'General').filter(r => r && r.trim() !== ''))];
-        allRooms.sort();
+        // Keep rooms in the same order as the import.
 
         this.state.importPreview.allRooms = allRooms;
         this.state.importPreview.selectedRooms = new Set(allRooms);
@@ -1203,8 +1203,7 @@ if (looksLikeHtml) {
         if (!container || !this.state.importPreview) return;
 
         container.innerHTML = '';
-        const selectedRooms = Array.from(this.state.importPreview.selectedRooms);
-        selectedRooms.sort();
+        const selectedRooms = (this.state.importPreview.allRooms || []).filter(room => this.state.importPreview.selectedRooms.has(room));
 
         if (selectedRooms.length === 0) {
             container.innerHTML = `<div class="text-xs text-secondary text-center py-4" style="grid-column: 1/-1;">No rooms selected. Go back to choose rooms.</div>`;
@@ -1250,8 +1249,7 @@ if (looksLikeHtml) {
         if (!container || !this.state.importPreview) return;
 
         container.innerHTML = '';
-        const selectedRooms = Array.from(this.state.importPreview.selectedRooms);
-        selectedRooms.sort();
+        const selectedRooms = (this.state.importPreview.allRooms || []).filter(room => this.state.importPreview.selectedRooms.has(room));
 
         selectedRooms.forEach(room => {
             const dims = this.state.importPreview.roomDimensions[room] || { width: '', length: '', height: '' };
@@ -1816,6 +1814,7 @@ window.addEventListener('DOMContentLoaded', () => {
         app.advisor.populateDashboardQuickList();
     }
 });
+
 
 
 
