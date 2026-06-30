@@ -290,8 +290,61 @@ class ProposalComponent {
         return this.wrapPdfText(clean, maxChars);
     }
 
-    buildProposalDocumentPdfBlob() {
+
+    getPdfTextWidth(value, fontSize = 9) {
+        return this.escapePdfLiteral(value).replace(/\\243/g, '£').length * fontSize * 0.52;
+    }
+
+    async loadProposalLogoForPdf() {
+        const logoImg = document.querySelector('.doc-brand-logo-img');
+        const src = logoImg?.currentSrc || logoImg?.src || logoImg?.getAttribute('src');
+
+        if (!src) return null;
+
+        return new Promise((resolve) => {
+            const image = new Image();
+            image.crossOrigin = 'anonymous';
+
+            image.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    const maxWidth = 520;
+                    const ratio = image.naturalWidth > maxWidth ? maxWidth / image.naturalWidth : 1;
+                    const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+                    const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, width, height);
+                    ctx.drawImage(image, 0, 0, width, height);
+
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+                    const base64 = dataUrl.split(',')[1];
+                    const binary = atob(base64);
+                    let hex = '';
+
+                    for (let i = 0; i < binary.length; i += 1) {
+                        hex += binary.charCodeAt(i).toString(16).padStart(2, '0');
+                    }
+
+                    resolve({ width, height, hex });
+                } catch (err) {
+                    console.warn('Unable to prepare logo for PDF export:', err);
+                    resolve(null);
+                }
+            };
+
+            image.onerror = () => resolve(null);
+            image.src = src;
+        });
+    }
+
+    async buildProposalDocumentPdfBlob() {
         this.render();
+        const logoData = await this.loadProposalLogoForPdf();
 
         const encoder = new TextEncoder();
         const pageWidth = 595;
@@ -310,8 +363,15 @@ class ProposalComponent {
         const text = (value, x, textY, size = 9, font = 'F1') => {
             add(`BT /${font} ${size} Tf ${x.toFixed(2)} ${textY.toFixed(2)} Td (${this.escapePdfLiteral(value)}) Tj ET`);
         };
+        const textRight = (value, rightX, textY, size = 9, font = 'F1') => {
+            const x = rightX - this.getPdfTextWidth(value, size);
+            text(value, x, textY, size, font);
+        };
         const line = (x1, y1, x2, y2) => add(`0.75 w ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);
         const rectFill = (x, rectY, width, height, gray = 0.94) => add(`q ${gray} g ${x.toFixed(2)} ${rectY.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re f Q`);
+        const drawLogo = (x, drawY, width, height) => {
+            if (logoData) add(`q ${width.toFixed(2)} 0 0 ${height.toFixed(2)} ${x.toFixed(2)} ${drawY.toFixed(2)} cm /Logo Do Q`);
+        };
 
         const finishPage = () => {
             if (commands.length) pages.push(commands.join('\n'));
@@ -339,13 +399,23 @@ class ProposalComponent {
         const date = document.getElementById('preview-doc-date')?.innerText || new Date().toLocaleDateString('en-GB');
         const intro = document.getElementById('preview-doc-intro')?.innerText || '';
         const contact = document.getElementById('preview-doc-contact')?.innerText || 'Estimator';
+        const companyName = document.getElementById('proposal-company-name')?.value
+            || document.getElementById('preview-brand-name')?.innerText
+            || 'GVD Contracts';
 
-        text('QUOTE PROPOSAL', margin, y, 15, 'F2');
-        y -= 20;
-        text(`Reference: ${ref}`, margin, y, 9.5, 'F1');
-        y -= 14;
-        text(`Date: ${date}`, margin, y, 9.5, 'F1');
-        y -= 24;
+        if (logoData) {
+            const logoWidth = 128;
+            const logoHeight = Math.min(58, logoWidth * (logoData.height / logoData.width));
+            drawLogo(margin, y - logoHeight + 4, logoWidth, logoHeight);
+        } else {
+            text(companyName, margin, y - 8, 14, 'F2');
+            text('QUOTE PROPOSAL', margin, y - 26, 9, 'F1');
+        }
+
+        textRight('QUOTE PROPOSAL', rightMargin, y - 2, 15, 'F2');
+        textRight(`Reference: ${ref}`, rightMargin, y - 22, 9.5, 'F1');
+        textRight(`Date: ${date}`, rightMargin, y - 36, 9.5, 'F1');
+        y -= 76;
         line(margin, y, rightMargin, y);
         y -= 24;
 
@@ -424,16 +494,20 @@ class ProposalComponent {
         const subtotalText = document.getElementById('preview-doc-subtotal')?.innerText || money(runningTotal);
         const totalText = document.getElementById('preview-doc-total')?.innerText || money(runningTotal);
 
-        ensureSpace(78);
+        ensureSpace(92);
         y -= 4;
-        line(330, y, rightMargin, y);
+        const summaryLeft = 315;
+        const summaryLabelRight = 438;
+        const summaryValueRight = rightMargin - 4;
+        line(summaryLeft, y, rightMargin, y);
         y -= 18;
-        text('Subtotal', 360, y, 10, 'F2');
-        text(subtotalText, 470, y, 10, 'F2');
-        y -= 18;
-        text('Total Proposed Tender Value', 330, y, 10.5, 'F2');
-        text(totalText, 470, y, 10.5, 'F2');
-        y -= 30;
+        textRight('Subtotal', summaryLabelRight, y, 10, 'F2');
+        textRight(subtotalText, summaryValueRight, y, 10, 'F2');
+        y -= 20;
+        line(summaryLeft, y + 8, rightMargin, y + 8);
+        textRight('Total Proposed Tender Value', summaryLabelRight, y, 10.5, 'F2');
+        textRight(totalText, summaryValueRight, y, 10.5, 'F2');
+        y -= 32;
 
         ensureSpace(46);
         text('3. VALUE ENGINEERING OPPORTUNITIES', margin, y, 12, 'F2');
@@ -466,18 +540,26 @@ class ProposalComponent {
         });
 
         const objects = [];
-        const pageIds = numberedPages.map((_, index) => 5 + index * 2);
-        const contentIds = numberedPages.map((_, index) => 6 + index * 2);
+        const hasLogo = Boolean(logoData);
+        const firstPageObjectId = hasLogo ? 6 : 5;
+        const pageIds = numberedPages.map((_, index) => firstPageObjectId + index * 2);
+        const contentIds = numberedPages.map((_, index) => firstPageObjectId + 1 + index * 2);
 
         objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
         objects[2] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${numberedPages.length} >>`;
         objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
         objects[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
 
+        if (hasLogo) {
+            const imageStream = `${logoData.hex}>`;
+            objects[5] = `<< /Type /XObject /Subtype /Image /Width ${logoData.width} /Height ${logoData.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${imageStream.length} >>\nstream\n${imageStream}\nendstream`;
+        }
+
         numberedPages.forEach((stream, index) => {
             const pageId = pageIds[index];
             const contentId = contentIds[index];
-            objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`;
+            const xObjectResources = hasLogo ? ' /XObject << /Logo 5 0 R >>' : '';
+            objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xObjectResources} >> /Contents ${contentId} 0 R >>`;
             objects[contentId] = `<< /Length ${encoder.encode(stream).length} >>\nstream\n${stream}\nendstream`;
         });
 
@@ -502,9 +584,9 @@ class ProposalComponent {
         return new Blob([encoder.encode(pdf)], { type: 'application/pdf' });
     }
 
-    downloadProposalPdf() {
+    async downloadProposalPdf() {
         try {
-            const blob = this.buildProposalDocumentPdfBlob();
+            const blob = await this.buildProposalDocumentPdfBlob();
             const ref = (document.getElementById('preview-doc-ref')?.innerText || 'quote-proposal')
                 .replace(/[^a-z0-9-]+/gi, '-')
                 .replace(/-+/g, '-')
