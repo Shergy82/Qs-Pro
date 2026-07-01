@@ -20,6 +20,106 @@ class PricingComponent {
         this.loadPriceLibrary();
     }
 
+    normaliseUnit(unit) {
+        const clean = String(unit || '').trim().toLowerCase();
+        if (['m2', 'm²', 'sqm', 'sq m', 'square metre', 'square metres'].includes(clean)) return 'm2';
+        if (['m3', 'm³', 'cum', 'cu m', 'cubic metre', 'cubic metres'].includes(clean)) return 'm3';
+        if (['m', 'lm', 'linear', 'linear metre', 'linear metres'].includes(clean)) return 'm';
+        if (['nr', 'no', 'number', 'qty'].includes(clean)) return 'Nr';
+        if (['item', 'each', 'ea'].includes(clean)) return 'Item';
+        if (['sum', 'ls', 'lump sum'].includes(clean)) return 'Sum';
+        if (['hr', 'hour', 'hours'].includes(clean)) return 'hr';
+        if (['day', 'days'].includes(clean)) return 'day';
+        if (['t', 'ton', 'tonne', 'tonnes'].includes(clean)) return 't';
+        return unit || 'Item';
+    }
+
+    displayUnit(unit) {
+        const normalised = this.normaliseUnit(unit);
+        if (normalised === 'm2') return 'm²';
+        if (normalised === 'm3') return 'm³';
+        return normalised;
+    }
+
+    normaliseMatchText(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/[£$€]/g, '')
+            .replace(/[^a-z0-9]+/g, ' ')
+            .replace(/\b(ref|reference|line|item|no|number)\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    getRateCost(rate) {
+        if (!rate) return 0;
+        const componentCost = (Number(rate.materialRate) || 0) +
+            (Number(rate.labourRate) || 0) +
+            (Number(rate.plantRate) || 0) +
+            (Number(rate.subRate) || 0);
+        if (componentCost > 0) return componentCost;
+        if (Number.isFinite(Number(rate.company))) return Number(rate.company) || 0;
+        return Number(rate.current) || 0;
+    }
+
+    applyUnitCostToRate(rate, unitCost) {
+        const cost = Math.max(0, Number(unitCost) || 0);
+        rate.materialRate = 0;
+        rate.labourRate = 0;
+        rate.plantRate = 0;
+        rate.subRate = 0;
+
+        if (rate.category === 'labor' || rate.category === 'labour') {
+            rate.labourRate = cost;
+        } else if (rate.category === 'plant') {
+            rate.plantRate = cost;
+        } else if (rate.category === 'subcontractor') {
+            rate.subRate = cost;
+        } else {
+            rate.materialRate = cost;
+        }
+
+        rate.current = cost;
+        rate.company = cost;
+        rate.market = cost;
+    }
+
+    getLibraryCategory(rate) {
+        const category = String(rate?.category || '').toLowerCase();
+        if (category === 'labor' || category === 'labour') return 'Labour';
+        if (category === 'plant') return 'Plant';
+        if (category === 'subcontractor') return 'Subcontractor';
+        return 'Material';
+    }
+
+    findLibraryMatchForRate(item) {
+        const itemText = this.normaliseMatchText(item?.desc || item?.sorDesc || '');
+        if (!itemText) return null;
+
+        return this.priceLibrary.find(lib => {
+            const libText = this.normaliseMatchText(lib.name || lib.description || '');
+            if (!libText) return false;
+            if (libText === itemText) return true;
+            return libText.length > 18 && itemText.length > 18 && (libText.includes(itemText) || itemText.includes(libText));
+        }) || null;
+    }
+
+    getCostOnlyAIRequestBody(rate) {
+        const unit = this.normaliseUnit(rate.unit);
+        const unitLabel = this.displayUnit(unit);
+        const instruction = `Return a direct company cost-only unit rate for this scope. Exclude main-contractor overheads, preliminaries, profit, risk allowance, contingency, VAT and tender markup. The proposal markup/margin slider will add uplift later. Return the rate per ${unitLabel}; do not convert it into a line total.`;
+
+        return {
+            description: `${rate.desc}\n\nCost-only pricing instruction: ${instruction}`,
+            originalDescription: rate.desc,
+            unit: unit,
+            unitLabel: unitLabel,
+            quantity: Number(rate.qty) || 1,
+            category: rate.category || '',
+            pricingBasis: 'direct_company_cost_only_excluding_overheads_profit_markup_vat'
+        };
+    }
+
     async loadSupplierFeeds() {
         try {
             const dbRates = await app.apiFetch('/api/rates');
@@ -109,6 +209,11 @@ class PricingComponent {
             this.applyAISuggestionToModal();
         });
 
+        const btnClearAllPrices = document.getElementById('btn-clear-all-prices');
+        if (btnClearAllPrices) {
+            btnClearAllPrices.addEventListener('click', () => this.clearAllPrices());
+        }
+
         // Room Calculator unit change for add modal custom unit
         const addUnit = document.getElementById('add-item-unit');
         if (addUnit) {
@@ -183,18 +288,21 @@ class PricingComponent {
             const tr = document.createElement('tr');
             const roomName = r.section || r.room || 'General';
             const shortDesc = (r.desc || '').length > 140 ? (r.desc || '').slice(0, 140).trim() + '…' : (r.desc || '');
-            const total = (r.qty * r.current).toFixed(2);
+            const selectedUnit = this.normaliseUnit(r.unit);
+            const rateCost = this.getRateCost(r);
+            const total = ((Number(r.qty) || 0) * rateCost).toFixed(2);
+            const linkActive = this.pendingLinkRateCode && String(this.pendingLinkRateCode) === String(r.code);
 
             const unitOptions = `
-                <option value="Nr" ${r.unit === 'Nr' ? 'selected' : ''}>Nr</option>
-                <option value="m2" ${r.unit === 'm2' || r.unit === 'sqm' ? 'selected' : ''}>m²</option>
-                <option value="m3" ${r.unit === 'm3' || r.unit === 'cum' ? 'selected' : ''}>m³</option>
-                <option value="m" ${r.unit === 'm' || r.unit === 'lm' || r.unit === 'linear' ? 'selected' : ''}>m</option>
-                <option value="Item" ${r.unit === 'Item' ? 'selected' : ''}>Item</option>
-                <option value="Sum" ${r.unit === 'Sum' ? 'selected' : ''}>Sum</option>
-                <option value="hr" ${r.unit === 'hr' || r.unit === 'hour' ? 'selected' : ''}>hr</option>
-                <option value="day" ${r.unit === 'day' ? 'selected' : ''}>day</option>
-                <option value="t" ${r.unit === 't' || r.unit === 'ton' ? 'selected' : ''}>t</option>
+                <option value="Nr" ${selectedUnit === 'Nr' ? 'selected' : ''}>Nr</option>
+                <option value="m2" ${selectedUnit === 'm2' ? 'selected' : ''}>m²</option>
+                <option value="m3" ${selectedUnit === 'm3' ? 'selected' : ''}>m³</option>
+                <option value="m" ${selectedUnit === 'm' ? 'selected' : ''}>m</option>
+                <option value="Item" ${selectedUnit === 'Item' ? 'selected' : ''}>Item</option>
+                <option value="Sum" ${selectedUnit === 'Sum' ? 'selected' : ''}>Sum</option>
+                <option value="hr" ${selectedUnit === 'hr' ? 'selected' : ''}>hr</option>
+                <option value="day" ${selectedUnit === 'day' ? 'selected' : ''}>day</option>
+                <option value="t" ${selectedUnit === 't' ? 'selected' : ''}>t</option>
             `;
 
             if (isMobile) {
@@ -207,10 +315,15 @@ class PricingComponent {
                             <div class="mobile-pricing-grid">
                                 <label><span>Unit</span><select class="form-input text-xs" onchange="pricingComponent.updateRateUnit('${r.code}', this.value)">${unitOptions}</select></label>
                                 <label><span>Qty</span><input type="number" class="form-input text-xs" value="${r.qty}" step="any" onchange="pricingComponent.updateRateQty('${r.code}', this.value)"></label>
-                                <div><span>Rate</span><strong>£${r.current.toFixed(2)}</strong></div>
+                                <div><span>Rate</span><strong>£${rateCost.toFixed(2)}</strong></div>
                                 <div><span>Total</span><strong class="text-emerald">£${total}</strong></div>
                             </div>
-                            <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.editRate('${r.code}')">Adjust</button>
+                            <div class="mobile-pricing-actions" style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:10px;">
+                                <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.editRate('${r.code}')">Adjust</button>
+                                <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.startOrCompleteLinkRate('${r.code}')">${linkActive ? 'Linking...' : 'Link Item'}</button>
+                                <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.addRateToLibrary('${r.code}')">Add Library</button>
+                                <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.removeRate('${r.code}')">Remove</button>
+                            </div>
                         </div>
                     </td>
                 `;
@@ -221,9 +334,16 @@ class PricingComponent {
                     <td><div class="font-semibold">${shortDesc}</div></td>
                     <td><select class="form-input text-xs" style="background: #0e1422; border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; width: 80px; color: var(--text-primary); outline: none; display: inline-block;" onchange="pricingComponent.updateRateUnit('${r.code}', this.value)">${unitOptions}</select></td>
                     <td class="text-right"><input type="number" class="form-input text-xs" style="background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; width: 80px; text-align: right; color: var(--text-primary); outline: none; margin-left: auto;" value="${r.qty}" step="any" onchange="pricingComponent.updateRateQty('${r.code}', this.value)"></td>
-                    <td class="text-right">£${r.current.toFixed(2)}</td>
+                    <td class="text-right">£${rateCost.toFixed(2)}</td>
                     <td class="text-right font-bold text-emerald">£${total}</td>
-                    <td class="text-right"><button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.editRate('${r.code}')">Adjust</button></td>
+                    <td class="text-right">
+                        <div style="display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap;">
+                            <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.editRate('${r.code}')">Adjust</button>
+                            <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.startOrCompleteLinkRate('${r.code}')">${linkActive ? 'Linking...' : 'Link'}</button>
+                            <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.addRateToLibrary('${r.code}')">Library</button>
+                            <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.removeRate('${r.code}')">Remove</button>
+                        </div>
+                    </td>
                 `;
             }
 
@@ -321,11 +441,11 @@ class PricingComponent {
         // Set unit dropdown value
         const unitSelect = document.getElementById('rate-unit-select');
         const unitMap = {
-            'Nr': 'Nr', 'm2': 'm2', 'sqm': 'm2', 'm3': 'm3', 'cum': 'm3',
-            'm': 'm', 'lm': 'm', 'linear': 'm', 'Item': 'Item', 'Sum': 'Sum',
+            'Nr': 'Nr', 'm2': 'm2', 'm²': 'm2', 'sqm': 'm2', 'm3': 'm3', 'm³': 'm3', 'cum': 'm3',
+            'm': 'm', 'lm': 'm', 'linear': 'm', 'Item': 'Item', 'item': 'Item', 'Sum': 'Sum',
             'hr': 'hr', 'hour': 'hr', 'day': 'day', 't': 't', 'ton': 't'
         };
-        const mappedUnit = unitMap[rate.unit] || 'Nr';
+        const mappedUnit = unitMap[rate.unit] || this.normaliseUnit(rate.unit);
         if (unitSelect) {
             unitSelect.value = mappedUnit;
         }
@@ -399,7 +519,7 @@ class PricingComponent {
         rate.qty = parseFloat(document.getElementById('rate-qty-input').value) || 0;
         const selectEl = document.getElementById('rate-unit-select');
         if (selectEl) {
-            rate.unit = selectEl.value;
+            rate.unit = this.normaliseUnit(selectEl.value);
         }
 
         rate.materialRate = parseFloat(document.getElementById('rate-material').value) || 0;
@@ -408,6 +528,8 @@ class PricingComponent {
         rate.subRate = parseFloat(document.getElementById('rate-sub').value) || 0;
         
         rate.current = rate.materialRate + rate.labourRate + rate.plantRate + rate.subRate;
+        rate.company = rate.current;
+        rate.market = rate.current;
 
         // Remember room calculator measurements and propagate
         const width = parseFloat(document.getElementById('adjust-calc-width').value) || 0;
@@ -479,17 +601,15 @@ class PricingComponent {
         try {
             const data = await app.apiFetch('/api/ai/price-suggest', {
                 method: 'POST',
-                body: {
-                    description: rate.desc,
-                    unit: rate.unit
-                }
+                body: this.getCostOnlyAIRequestBody(rate)
             });
             
             if (data && data.success) {
+                const displayUnit = this.displayUnit(rate.unit);
                 document.getElementById('ai-suggested-val').innerText = `£${data.recommendedRate.toFixed(2)}`;
-                document.getElementById('ai-suggested-range').innerText = `£${data.minPrice.toFixed(2)} - £${data.maxPrice.toFixed(2)} per ${rate.unit}`;
+                document.getElementById('ai-suggested-range').innerText = `£${data.minPrice.toFixed(2)} - £${data.maxPrice.toFixed(2)} per ${displayUnit}`;
                 document.getElementById('ai-suggested-explain').innerText = data.explanation;
-                document.getElementById('ai-suggested-source').innerText = data.source || 'Standard UK Construction Index';
+                document.getElementById('ai-suggested-source').innerText = `${data.source || 'Standard UK Construction Index'} — cost only, excluding OH&P/profit/markup/VAT`;
                 
                 this.modalAISuggestedRate = data.recommendedRate;
 
@@ -516,21 +636,20 @@ class PricingComponent {
         if (this.modalAISuggestedRate === undefined || !this.activeRateModal) return;
         const rate = this.activeRateModal;
         
-        if (rate.category === 'labor') {
-            document.getElementById('rate-labour').value = this.modalAISuggestedRate.toFixed(2);
-            document.getElementById('rate-material').value = '0.00';
-            document.getElementById('rate-plant').value = '0.00';
-            document.getElementById('rate-sub').value = '0.00';
+        const suggestedCost = Number(this.modalAISuggestedRate) || 0;
+        document.getElementById('rate-material').value = '0.00';
+        document.getElementById('rate-labour').value = '0.00';
+        document.getElementById('rate-plant').value = '0.00';
+        document.getElementById('rate-sub').value = '0.00';
+
+        if (rate.category === 'labor' || rate.category === 'labour') {
+            document.getElementById('rate-labour').value = suggestedCost.toFixed(2);
+        } else if (rate.category === 'plant') {
+            document.getElementById('rate-plant').value = suggestedCost.toFixed(2);
         } else if (rate.category === 'subcontractor') {
-            document.getElementById('rate-sub').value = this.modalAISuggestedRate.toFixed(2);
-            document.getElementById('rate-material').value = '0.00';
-            document.getElementById('rate-labour').value = '0.00';
-            document.getElementById('rate-plant').value = '0.00';
+            document.getElementById('rate-sub').value = suggestedCost.toFixed(2);
         } else {
-            document.getElementById('rate-material').value = this.modalAISuggestedRate.toFixed(2);
-            document.getElementById('rate-labour').value = '0.00';
-            document.getElementById('rate-plant').value = '0.00';
-            document.getElementById('rate-sub').value = '0.00';
+            document.getElementById('rate-material').value = suggestedCost.toFixed(2);
         }
         
         this.calcModalTotal();
@@ -550,12 +669,7 @@ class PricingComponent {
     async applyAIPriceToRate(rate) {
         const data = await app.apiFetch('/api/ai/price-suggest', {
             method: 'POST',
-            body: {
-                description: rate.desc,
-                unit: rate.unit,
-                quantity: rate.qty || 1,
-                category: rate.category || ''
-            }
+            body: this.getCostOnlyAIRequestBody(rate)
         });
 
         if (!data || !data.success || !Number.isFinite(Number(data.recommendedRate))) {
@@ -564,24 +678,7 @@ class PricingComponent {
 
         const aiRate = Number(data.recommendedRate);
 
-        rate.materialRate = 0;
-        rate.labourRate = 0;
-        rate.plantRate = 0;
-        rate.subRate = 0;
-
-        if (rate.category === 'labor') {
-            rate.labourRate = aiRate;
-        } else if (rate.category === 'plant') {
-            rate.plantRate = aiRate;
-        } else if (rate.category === 'subcontractor') {
-            rate.subRate = aiRate;
-        } else {
-            rate.materialRate = aiRate;
-        }
-
-        rate.current = aiRate;
-        rate.company = aiRate;
-        rate.market = aiRate;
+        this.applyUnitCostToRate(rate, aiRate);
 
         if (data.detectedQuantity && Number(data.detectedQuantity) > 1 && (!rate.qty || Number(rate.qty) <= 1)) {
             rate.qty = Number(data.detectedQuantity);
@@ -643,7 +740,7 @@ class PricingComponent {
     updateRateUnit(code, newUnit) {
         const rate = this.rates.find(r => r.code === code);
         if (rate) {
-            rate.unit = newUnit;
+            rate.unit = this.normaliseUnit(newUnit);
             this.render(
                 document.getElementById('pricing-search').value,
                 document.getElementById('pricing-category-filter').value
@@ -821,9 +918,9 @@ class PricingComponent {
                     code: r.id,
                     desc: r.name,
                     category: (r.category || 'materials').toLowerCase(),
-                    unit: r.unit || 'm',
+                    unit: this.normaliseUnit(r.unit || 'm'),
                     company: r.costRate || 0,
-                    market: Math.round((r.costRate || 0) * 1.15),
+                    market: r.costRate || 0,
                     current: r.costRate || 0,
                     qty: 0,
                     materialRate: (r.category || '').toLowerCase() === 'materials' ? r.costRate : 0,
@@ -873,9 +970,9 @@ class PricingComponent {
                 desc: est.description,
                 section: est.section || 'General',
                 category: category,
-                unit: est.unit || 'Item',
+                unit: this.normaliseUnit(est.unit || 'Item'),
                 company: unitRate,
-                market: Math.round(unitRate * 1.15),
+                market: unitRate,
                 current: unitRate,
                 qty: est.quantity || 0,
                 materialRate: est.materialRate || 0,
@@ -903,8 +1000,11 @@ class PricingComponent {
                         plantRate: rate.plantRate || 0,
                         subRate: rate.subRate || 0,
                         description: rate.desc,
-                        unit: rate.unit,
-                        section: rate.section || 'General'
+                        unit: this.normaliseUnit(rate.unit),
+                        section: rate.section || 'General',
+                        sorOrderIndex: Number.isFinite(Number(rate.sorOrderIndex)) ? Number(rate.sorOrderIndex) : undefined,
+                        sourceOrder: Number.isFinite(Number(rate.sourceOrder)) ? Number(rate.sourceOrder) : undefined,
+                        sorRef: rate.sorRef || undefined
                     }
                 });
             } else {
@@ -915,7 +1015,10 @@ class PricingComponent {
                         section: rate.section || 'General',
                         description: rate.desc,
                         quantity: rate.qty,
-                        unit: rate.unit,
+                        unit: this.normaliseUnit(rate.unit),
+                        sorOrderIndex: Number.isFinite(Number(rate.sorOrderIndex)) ? Number(rate.sorOrderIndex) : undefined,
+                        sourceOrder: Number.isFinite(Number(rate.sourceOrder)) ? Number(rate.sourceOrder) : undefined,
+                        sorRef: rate.sorRef || undefined,
                         materialRate: rate.materialRate || 0,
                         labourRate: rate.labourRate || 0,
                         plantRate: rate.plantRate || 0,
@@ -957,13 +1060,14 @@ class PricingComponent {
         const promises = [];
 
         for (const item of this.rates) {
-            const libMatch = this.priceLibrary.find(l => l.name.toLowerCase().trim() === item.desc.toLowerCase().trim());
+            const libMatch = this.findLibraryMatchForRate(item);
             if (libMatch) {
-                const cost = libMatch.costRate;
+                const cost = Number(libMatch.costRate) || 0;
+                const libCategory = String(libMatch.category || '').toLowerCase();
                 let mat = 0, lab = 0, plt = 0, sub = 0;
-                if (libMatch.category === 'Material') mat = cost;
-                else if (libMatch.category === 'Plant') plt = cost;
-                else if (libMatch.category === 'Labour' || libMatch.category === 'labor') lab = cost;
+                if (libCategory === 'material' || libCategory === 'materials') mat = cost;
+                else if (libCategory === 'plant') plt = cost;
+                else if (libCategory === 'labour' || libCategory === 'labor') lab = cost;
                 else sub = cost;
 
                 if (item.materialRate !== mat || item.labourRate !== lab || item.plantRate !== plt || item.subRate !== sub) {
@@ -972,6 +1076,9 @@ class PricingComponent {
                     item.plantRate = plt;
                     item.subRate = sub;
                     item.current = cost;
+                    item.company = cost;
+                    item.market = cost;
+                    item.unit = this.normaliseUnit(libMatch.unit || item.unit);
                     
                     updatedCount++;
                     promises.push(this.saveRateToBackend(item));
@@ -1169,6 +1276,177 @@ class PricingComponent {
             console.error('Error adding estimate item:', err);
             alert('Error adding item: ' + err.message);
         }
+    }
+
+    async addRateToLibrary(code) {
+        const rate = this.rates.find(r => String(r.code) === String(code));
+        if (!rate) return;
+        await this.saveRateAsLibraryItem(rate);
+    }
+
+    async addActiveRateToLibrary() {
+        if (!this.activeRateModal) return;
+
+        const rate = this.activeRateModal;
+        rate.unit = this.normaliseUnit(document.getElementById('rate-unit-select')?.value || rate.unit);
+        rate.materialRate = parseFloat(document.getElementById('rate-material')?.value) || 0;
+        rate.labourRate = parseFloat(document.getElementById('rate-labour')?.value) || 0;
+        rate.plantRate = parseFloat(document.getElementById('rate-plant')?.value) || 0;
+        rate.subRate = parseFloat(document.getElementById('rate-sub')?.value) || 0;
+        rate.current = this.getRateCost(rate);
+        rate.company = rate.current;
+        rate.market = rate.current;
+
+        await this.saveRateAsLibraryItem(rate);
+    }
+
+    async saveRateAsLibraryItem(rate) {
+        if (!rate) return;
+        const cost = this.getRateCost(rate);
+        if (!cost || cost <= 0) {
+            alert('Add a cost rate before saving this item to the library.');
+            return;
+        }
+
+        const payload = {
+            name: rate.desc,
+            description: rate.desc,
+            category: this.getLibraryCategory(rate),
+            unit: this.normaliseUnit(rate.unit),
+            costRate: cost,
+            supplier: 'Saved from tender estimate',
+            tradeScope: rate.section || 'General'
+        };
+
+        try {
+            await app.apiFetch('/api/rates', {
+                method: 'POST',
+                body: payload
+            });
+            await this.loadPriceLibrary();
+            alert('Saved this item to the Price Library. Future matching descriptions can now sync from the library.');
+        } catch (err) {
+            console.error('Add to library failed:', err);
+            alert('Could not save this item to the library. If this repeats, the backend /api/rates POST route needs enabling.');
+        }
+    }
+
+    async removeRate(code, skipConfirm = false) {
+        const index = this.rates.findIndex(r => String(r.code) === String(code));
+        if (index === -1) return;
+
+        const rate = this.rates[index];
+        if (!skipConfirm && !confirm(`Remove this item from the schedule?\n\n${rate.desc}`)) return;
+
+        const removed = this.rates.splice(index, 1)[0];
+
+        try {
+            if (removed.backendId) {
+                await app.apiFetch(`/api/estimate-items/${removed.backendId}`, { method: 'DELETE' });
+            }
+        } catch (err) {
+            console.warn('Delete route failed; saving zero quantity as fallback.', err);
+            removed.qty = 0;
+            this.applyUnitCostToRate(removed, 0);
+            await this.saveRateToBackend(removed);
+        }
+
+        this.render(
+            document.getElementById('pricing-search')?.value || '',
+            document.getElementById('pricing-category-filter')?.value || 'all'
+        );
+
+        if (app.advisor) {
+            app.advisor.recalculateTenderTotals();
+        }
+    }
+
+    async clearAllPrices() {
+        if (this.rates.length === 0) {
+            alert('There are no items to clear.');
+            return;
+        }
+
+        if (!confirm('Clear every price in this document to £0.00? Quantities and descriptions will be kept.')) {
+            return;
+        }
+
+        const promises = this.rates.map(rate => {
+            this.applyUnitCostToRate(rate, 0);
+            return this.saveRateToBackend(rate);
+        });
+
+        await Promise.all(promises);
+        this.render(
+            document.getElementById('pricing-search')?.value || '',
+            document.getElementById('pricing-category-filter')?.value || 'all'
+        );
+
+        if (app.advisor) {
+            app.advisor.recalculateTenderTotals();
+        }
+
+        alert('All prices have been reset to £0.00.');
+    }
+
+    async startOrCompleteLinkRate(code) {
+        const selected = this.rates.find(r => String(r.code) === String(code));
+        if (!selected) return;
+
+        if (!this.pendingLinkRateCode) {
+            this.pendingLinkRateCode = code;
+            this.render(
+                document.getElementById('pricing-search')?.value || '',
+                document.getElementById('pricing-category-filter')?.value || 'all'
+            );
+            alert('Link mode started. Now press Link on the item that should receive this description and value.');
+            return;
+        }
+
+        if (String(this.pendingLinkRateCode) === String(code)) {
+            this.pendingLinkRateCode = null;
+            this.render(
+                document.getElementById('pricing-search')?.value || '',
+                document.getElementById('pricing-category-filter')?.value || 'all'
+            );
+            alert('Link mode cancelled.');
+            return;
+        }
+
+        const source = this.rates.find(r => String(r.code) === String(this.pendingLinkRateCode));
+        const target = selected;
+        this.pendingLinkRateCode = null;
+
+        if (!source || !target) return;
+
+        const sourceDesc = source.desc || '';
+        const targetDesc = target.desc || '';
+        target.desc = `${sourceDesc}\n${targetDesc}`.trim();
+
+        const sourceTotal = (Number(source.qty) || 0) * this.getRateCost(source);
+        const targetTotal = (Number(target.qty) || 0) * this.getRateCost(target);
+        const targetQty = Number(target.qty) || 1;
+        const combinedRate = (sourceTotal + targetTotal) / targetQty;
+        this.applyUnitCostToRate(target, combinedRate);
+
+        if (!Number.isFinite(Number(target.sorOrderIndex)) && Number.isFinite(Number(source.sorOrderIndex))) {
+            target.sorOrderIndex = source.sorOrderIndex;
+        }
+        if (!target.sorRef && source.sorRef) target.sorRef = source.sorRef;
+
+        await this.saveRateToBackend(target);
+        await this.removeRate(source.code, true);
+
+        this.render(
+            document.getElementById('pricing-search')?.value || '',
+            document.getElementById('pricing-category-filter')?.value || 'all'
+        );
+
+        if (app.advisor) {
+            app.advisor.recalculateTenderTotals();
+        }
+
+        alert('Items linked into one schedule line. The combined line keeps the total value from both items.');
     }
 
     // --- Calculator Helpers ---

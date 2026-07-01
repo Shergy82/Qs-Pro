@@ -472,7 +472,11 @@
                                 </button>
                                 <button id="btn-quick-ai-selected" class="btn btn-secondary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.quickAIPriceSelected()">
                                     <span>AI Price Selected</span>
-                                </button>                                <button class="btn btn-primary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.openAddEstimateItemModal()">
+                                </button>
+                                <button id="btn-clear-all-prices" class="btn btn-secondary py-1 px-3 text-xs" style="white-space: nowrap;">
+                                    <span>Clear All Prices</span>
+                                </button>
+                                <button class="btn btn-primary py-1 px-3 text-xs" style="white-space: nowrap;" onclick="pricingComponent.openAddEstimateItemModal()">
                                     <span>+ Add Item</span>
                                 </button>
                             </div>
@@ -1028,17 +1032,17 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><path d="M12 2a10 10 0 0110 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0112 2z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                             <span>AI Price Intelligence</span>
                         </h4>
-                        <p class="text-xs text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 16px;">Query the AI model to search for current UK industry standard rates for this specific task and unit.</p>
+                        <p class="text-xs text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 16px;">Query AI for a direct company cost-only rate for this task and unit. Overheads, profit, VAT, contingency and tender markup are excluded because the proposal slider adds uplift later.</p>
                         
                         <button type="button" class="btn btn-primary text-xs" id="btn-trigger-ai-lookup" style="padding: 8px 12px;">
-                            <span id="ai-lookup-btn-text">AI Market Rate Lookup</span>
+                            <span id="ai-lookup-btn-text">AI Cost Rate Lookup</span>
                         </button>
                         
                         <!-- AI Results Container -->
                         <div id="ai-lookup-results" style="display: none; margin-top: 16px;" class="flex-grow flex flex-col justify-between">
                             <div class="space-y-2">
                                 <div class="flex justify-between items-center rounded" style="background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2); padding: 8px 12px; margin-bottom: 8px;">
-                                    <span class="text-xs text-secondary">AI Suggested Rate:</span>
+                                    <span class="text-xs text-secondary">AI Suggested Base Cost:</span>
                                     <span class="font-bold text-indigo text-sm" id="ai-suggested-val" style="color: var(--color-indigo); font-size: 1rem;">£0.00</span>
                                 </div>
                                 <div class="text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 6px;">
@@ -1053,7 +1057,7 @@
                             </div>
                             
                             <button type="button" class="btn text-xs w-full" id="btn-apply-ai-rate" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); color: var(--color-emerald); padding: 8px 12px; margin-top: 16px;">
-                                Apply AI Suggested Rate
+                                Apply AI Cost Rate
                             </button>
                         </div>
                         
@@ -1066,7 +1070,8 @@
                 </div>
             </div>
             
-            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px;">
+            <div class="modal-footer border-t pt-3 mt-4 flex justify-end gap-2" style="display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="pricingComponent.addActiveRateToLibrary()">Add to Library</button>
                 <button class="btn btn-secondary text-xs" style="padding: 8px 16px;" onclick="pricingComponent.closeAdjustModal()">Cancel</button>
                 <button class="btn btn-primary text-xs" style="padding: 8px 16px;" onclick="pricingComponent.saveAdjustModal()">Save Changes</button>
             </div>
@@ -1422,7 +1427,7 @@
     <!-- JavaScript Files -->
     <script src="app.js?v=clean-2"></script>
     <script src="components/takeoff.js"></script>
-    <script src="components/pricing.js?v=mobile-cost-1"></script>
+    <script src="components/pricing.js?v=mobile-cost-2"></script>
     <script src="components/library.js"></script>
     <script src="components/advisor.js"></script>
     <script src="components/proposal.js?v=mobile-pdf-6"></script>
