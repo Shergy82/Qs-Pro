@@ -332,8 +332,8 @@ class ProposalComponent {
             .map((item, index) => ({ ...item, __originalIndex: index }))
             .filter(item => this.safePdfNumber(item.qty) > 0)
             .sort((a, b) => {
-                const aSor = Number(a.sorOrderIndex ?? a.sourceOrder ?? a.orderIndex ?? a.lineNumber);
-                const bSor = Number(b.sorOrderIndex ?? b.sourceOrder ?? b.orderIndex ?? b.lineNumber);
+                const aSor = Number(a.sorOrderIndex ?? a.sourceOrder ?? a.sortOrder ?? a.orderIndex ?? a.lineNumber);
+                const bSor = Number(b.sorOrderIndex ?? b.sourceOrder ?? b.sortOrder ?? b.orderIndex ?? b.lineNumber);
                 const aHasSor = Number.isFinite(aSor);
                 const bHasSor = Number.isFinite(bSor);
 

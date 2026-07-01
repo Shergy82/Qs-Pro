@@ -271,11 +271,22 @@ class PricingComponent {
 
         tbody.innerHTML = '';
 
-        const filtered = this.rates.filter(rate => {
-            const matchesSearch = rate.desc.toLowerCase().includes(searchQuery.toLowerCase()) || rate.code.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesCategory = categoryFilter === 'all' || rate.category === categoryFilter;
-            return matchesSearch && matchesCategory;
-        });
+        const filtered = this.rates
+            .filter(rate => {
+                const matchesSearch = rate.desc.toLowerCase().includes(searchQuery.toLowerCase()) || rate.code.toLowerCase().includes(searchQuery.toLowerCase());
+                const matchesCategory = categoryFilter === 'all' || rate.category === categoryFilter;
+                return matchesSearch && matchesCategory;
+            })
+            .sort((a, b) => {
+                const aOrder = Number(a.sorOrderIndex ?? a.sourceOrder ?? a.sortOrder ?? a.orderIndex);
+                const bOrder = Number(b.sorOrderIndex ?? b.sourceOrder ?? b.sortOrder ?? b.orderIndex);
+                const aHasOrder = Number.isFinite(aOrder);
+                const bHasOrder = Number.isFinite(bOrder);
+                if (aHasOrder && bHasOrder && aOrder !== bOrder) return aOrder - bOrder;
+                if (aHasOrder && !bHasOrder) return -1;
+                if (!aHasOrder && bHasOrder) return 1;
+                return 0;
+            });
 
         if (filtered.length === 0) {
             tbody.innerHTML = `<tr><td colspan="8" class="text-center text-secondary py-5">No rates match search filter</td></tr>`;
@@ -962,7 +973,7 @@ class PricingComponent {
             else if (est.plantRate > 0) category = 'plant';
             else if (est.subRate > 0) category = 'subcontractor';
             
-            const parsedOrder = Number(est.sorOrderIndex ?? est.sourceOrder ?? est.orderIndex ?? est.lineNumber ?? index);
+            const parsedOrder = Number(est.sorOrderIndex ?? est.sourceOrder ?? est.sortOrder ?? est.orderIndex ?? est.lineNumber ?? index);
 
             return {
                 code: est.id,

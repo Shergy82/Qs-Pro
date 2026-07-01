@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const multer = require('multer');
@@ -175,39 +175,40 @@ function localHeuristicExcelParser(filePath) {
             }
           }
 
-          // Capture left-column section name if present
-          if (row[0] && String(row[0]).trim().length > 3) {
-            const possibleSection = String(row[0]).trim();
-            if (possibleSection.toLowerCase() !== 'yes' && possibleSection.toLowerCase() !== 'no') {
-              currentSection = possibleSection;
-            }
-          }
-
-          const status = String(row[statusColIdx] || '').trim().toLowerCase();
-          if (status !== 'yes' && status !== 'y' && status !== 'true' && status !== '1') {
-            continue;
+          // Capture the left-column merged room/area and fill it down.
+          if (largeLooksLikeRoomName(row[0])) {
+            currentSection = largeCellText(row[0]);
           }
 
           const cat = catColIdx !== -1 && row[catColIdx] ? String(row[catColIdx]).trim() : '';
           const details = descColIdx !== -1 && row[descColIdx] ? String(row[descColIdx]).trim() : '';
-          if (!details && !cat) continue;
 
-          const combinedDesc = cat ? `${cat}: ${details}` : details;
+          // Structured SOR/scope sheets are driven by the Further Information cell.
+          // Blank Further Information rows are not importable work items, even where
+          // the Required Yes/No column contains stale Yes/No values.
+          if (!largeHasUsefulFurtherInformation(details)) continue;
+
+          const combinedDesc = largeBuildStructuredDescription(cat, details);
 
           if (isInformationalOnly(combinedDesc.toLowerCase())) {
             continue;
           }
 
-          const roomResult = extractRoomFromDescription(combinedDesc, currentSection);
           items.push({
-            section: roomResult.room,
-            description: roomResult.description,
+            section: currentSection || 'General',
+            category: cat,
+            description: combinedDesc,
             quantity: 1,
             unit: 'Item',
             labourRate: 0,
             materialRate: 0,
             plantRate: 0,
-            subRate: 0
+            subRate: 0,
+            sourceOrder: items.length,
+            sortOrder: items.length,
+            originalIndex: items.length,
+            status: 'Yes',
+            selected: true
           });
         }
         return; // Proceed to next sheet
@@ -2469,15 +2470,10 @@ app.post('/api/projects/import', requireAuth, async (req, res) => {
         }
       }
 
-      // Ensure the room name is prepended to identify the room as requested
-      const sectionClean = (item.section || 'General').trim();
-      if (sectionClean && sectionClean.toLowerCase() !== 'general') {
-        const sLower = sectionClean.toLowerCase();
-        const dLower = combined.toLowerCase();
-        if (!dLower.startsWith(sLower)) {
-          combined = `${sectionClean} ${combined}`;
-        }
-      }
+      // Keep Room/Area separate from the Description.
+      // The pricing table and PDF already display section/room separately, so
+      // prefixing the description with the room makes imports harder to review
+      // and can cause room names to be inferred from the work type.
 
       await insertItem.run(
         crypto.randomUUID(),
@@ -2559,6 +2555,132 @@ function largeCellText(value) {
   return String(value).replace(/\r?\n/g, ' ').trim();
 }
 
+function largeNormaliseHeader(value) {
+  return largeCellText(value)
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, ' ')
+    .replace(/[^a-z0-9 /]/g, '')
+    .trim();
+}
+
+function largeIsBlankOrHeaderText(value) {
+  const text = largeCellText(value);
+  const lower = largeNormaliseHeader(text);
+  return !text ||
+    lower === 'further information' ||
+    lower === 'description' ||
+    lower === 'details' ||
+    lower === 'scope' ||
+    lower === 'work description';
+}
+
+function largeLooksLikeRoomName(value) {
+  const text = largeCellText(value);
+  if (!text) return false;
+
+  const lower = text.toLowerCase();
+
+  if (text.length < 2 || text.length > 55) return false;
+  if (lower === 'yes' || lower === 'no' || lower === 'required yes or no') return false;
+  if (lower === 'room' || lower === 'type' || lower === 'further information') return false;
+
+  const blocked = [
+    'address', 'cost', 'duration', 'capital expenditure', 'compliance',
+    'allow for', 'breakdown', 'break down', 'works shall', 'shall include',
+    'description', 'further information', 'required', 'cost per', 'please select',
+    'gbp ', '£'
+  ];
+
+  return !blocked.some(word => lower.includes(word));
+}
+
+function largeHasUsefulFurtherInformation(value) {
+  const text = largeCellText(value);
+  if (largeIsBlankOrHeaderText(text)) return false;
+  if (text.length < 5) return false;
+
+  const lower = text.toLowerCase();
+  if (lower === 'yes' || lower === 'no' || lower === 'n/a' || lower === 'na') return false;
+  if (lower.includes('please select')) return false;
+
+  return true;
+}
+
+function largeBuildStructuredDescription(typeValue, furtherInfoValue) {
+  const type = largeCellText(typeValue);
+  const further = largeCellText(furtherInfoValue);
+  if (!type) return further;
+  if (!further) return '';
+
+  const lowerFurther = further.toLowerCase();
+  const lowerType = type.toLowerCase();
+  if (lowerFurther.startsWith(lowerType)) return further;
+
+  return `${type}: ${further}`;
+}
+
+function largeFindChecklistColumns(rows) {
+  let headerRowIdx = -1;
+  let roomColIdx = 0;
+  let typeColIdx = 1;
+  let statusColIdx = -1;
+  let descColIdx = -1;
+
+  for (let r = 0; r < Math.min(rows.length, 80); r++) {
+    const row = rows[r];
+    if (!Array.isArray(row)) continue;
+
+    const headers = row.map(largeNormaliseHeader);
+    const roomIdx = headers.findIndex(h => h === 'room' || h === 'area' || h === 'location');
+    const typeIdx = headers.findIndex(h => h === 'type' || h === 'trade' || h === 'item');
+    const requiredIdx = headers.findIndex(h => h.includes('required') || h === 'yes or no' || h === 'required yes or no');
+    const furtherInfoIdx = headers.findIndex(h => h.includes('further information'));
+    const detailIdx = headers.findIndex(h => h === 'details' || h === 'scope' || h.includes('description'));
+    const furtherIdx = furtherInfoIdx !== -1 ? furtherInfoIdx : (requiredIdx !== -1 ? detailIdx : -1);
+
+    // Do not classify a normal BOQ/SOR table as a checklist just because it has
+    // an Item + Description header. The structured scoping template must have
+    // a Further Information header or a Required Yes/No column.
+    if (furtherIdx !== -1 && (furtherInfoIdx !== -1 || requiredIdx !== -1) && (roomIdx !== -1 || typeIdx !== -1 || requiredIdx !== -1)) {
+      headerRowIdx = r;
+      if (roomIdx !== -1) roomColIdx = roomIdx;
+      if (typeIdx !== -1) typeColIdx = typeIdx;
+      if (requiredIdx !== -1) statusColIdx = requiredIdx;
+      descColIdx = furtherIdx;
+      break;
+    }
+  }
+
+  if (descColIdx === -1) {
+    const colVotes = Array.from({ length: 30 }, () => ({ yes: 0, no: 0 }));
+
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      if (!Array.isArray(row)) continue;
+
+      for (let c = 0; c < Math.min(row.length, 30); c++) {
+        const str = largeCellText(row[c]).toLowerCase();
+        if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[c].yes++;
+        if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[c].no++;
+      }
+    }
+
+    for (let c = 0; c < colVotes.length; c++) {
+      if (colVotes[c].yes + colVotes[c].no >= 2) {
+        statusColIdx = c;
+        roomColIdx = 0;
+        typeColIdx = Math.max(0, c - 1);
+        descColIdx = c + 1;
+        break;
+      }
+    }
+  }
+
+  if (descColIdx === -1) return null;
+
+  return { headerRowIdx, roomColIdx, typeColIdx, statusColIdx, descColIdx };
+}
+
 function largeNumberFromCell(value) {
   if (value === null || value === undefined || value === '') return null;
 
@@ -2628,7 +2750,7 @@ function largeSkipSheet(sheetName) {
   );
 }
 
-function pushLargeParsedItem(items, rawSection, rawDescription, rawQuantity, rawUnit, selected = true) {
+function pushLargeParsedItem(items, rawSection, rawDescription, rawQuantity, rawUnit, selected = true, options = {}) {
   const description = largeCellText(rawDescription);
   if (description.length < 5) return;
 
@@ -2645,9 +2767,11 @@ function pushLargeParsedItem(items, rawSection, rawDescription, rawQuantity, raw
     return;
   }
 
-  const roomResult = typeof extractRoomFromDescription === 'function'
-    ? extractRoomFromDescription(description, rawSection || 'General')
-    : { room: rawSection || 'General', description };
+  const rawRoom = largeCellText(rawSection) || 'General';
+  const preserveRoom = !!options.preserveRoom;
+  const roomResult = (!preserveRoom && typeof extractRoomFromDescription === 'function')
+    ? extractRoomFromDescription(description, rawRoom)
+    : { room: rawRoom, description };
 
   let quantity = largeNumberFromCell(rawQuantity);
 
@@ -2657,19 +2781,25 @@ function pushLargeParsedItem(items, rawSection, rawDescription, rawQuantity, raw
   }
 
   const unit = largeGuessUnit(description, rawUnit);
+  const sourceOrder = Number.isFinite(Number(options.sourceOrder)) ? Number(options.sourceOrder) : items.length;
 
-  const key = `${roomResult.room}|${roomResult.description}|${quantity}|${unit}`.toLowerCase();
+  const key = `${roomResult.room}|${roomResult.description}|${quantity}|${unit}|${sourceOrder}`.toLowerCase();
   if (items.some(item => item._largeKey === key)) return;
 
   items.push({
     _largeKey: key,
-    section: roomResult.room || rawSection || 'General',
-    category: '',
+    section: roomResult.room || rawRoom,
+    category: largeCellText(options.category),
     description: roomResult.description || description,
     quantity,
     unit,
     status: selected ? 'Yes' : 'No',
-    selected: !!selected
+    selected: !!selected,
+    sourceOrder,
+    sortOrder: sourceOrder,
+    originalIndex: sourceOrder,
+    sourceSheet: options.sourceSheet || '',
+    sourceRow: options.sourceRow || null
   });
 }
 
@@ -2705,82 +2835,47 @@ function parseLargeExcelWorkbook(filePath, originalName) {
 
     console.log(`[Large Excel Parser] Sheet "${sheetName}" loaded with ${rows.length} sampled rows.`);
 
-    let statusColIdx = -1;
-    const colVotes = Array.from({ length: 30 }, () => ({ yes: 0, no: 0 }));
-
-    for (let r = 0; r < rows.length; r++) {
-      const row = rows[r];
-      if (!Array.isArray(row)) continue;
-
-      for (let c = 0; c < Math.min(row.length, 30); c++) {
-        const str = largeCellText(row[c]).toLowerCase();
-        if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[c].yes++;
-        if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[c].no++;
-      }
-    }
-
-    for (let c = 0; c < colVotes.length; c++) {
-      if (colVotes[c].yes + colVotes[c].no >= 2) {
-        statusColIdx = c;
-        break;
-      }
-    }
-
+    const checklistColumns = largeFindChecklistColumns(rows);
     let currentSection = sheetName || 'General';
 
-    if (statusColIdx !== -1) {
-      const roomColIdx = 0;
-      const catColIdx = 1;
-      let descColIdx = 3;
+    if (checklistColumns) {
+      const { roomColIdx, typeColIdx, descColIdx, headerRowIdx } = checklistColumns;
 
-      if (descColIdx >= 30) descColIdx = statusColIdx + 1;
+      console.log(`[Large Excel Parser] Structured checklist detected: "${sheetName}". roomColIdx=${roomColIdx}, typeColIdx=${typeColIdx}, descColIdx=${descColIdx}`);
 
       for (let r = 0; r < rows.length; r++) {
         if (items.length >= LARGE_EXCEL_MAX_ITEMS) break;
 
         const row = rows[r];
         if (!Array.isArray(row) || row.length === 0) continue;
+        if (headerRowIdx !== -1 && r <= headerRowIdx) continue;
 
         if (largeLooksLikeSectionRow(row)) {
-          currentSection = largeCellText(row.find(Boolean));
+          const sectionText = largeCellText(row.find(Boolean));
+          if (largeLooksLikeRoomName(sectionText)) currentSection = sectionText;
           continue;
         }
 
         const possibleRoom = largeCellText(row[roomColIdx]);
-        if (possibleRoom && possibleRoom.length <= 45) {
-          const lowerRoom = possibleRoom.toLowerCase();
-          const blocked =
-            lowerRoom.includes('address') ||
-            lowerRoom.includes('cost') ||
-            lowerRoom.includes('duration') ||
-            lowerRoom.includes('capital expenditure') ||
-            lowerRoom.includes('compliance') ||
-            lowerRoom.includes('allow for') ||
-            lowerRoom.includes('breakdown');
-
-          if (!blocked && lowerRoom !== 'yes' && lowerRoom !== 'no') {
-            currentSection = possibleRoom;
-          }
+        if (largeLooksLikeRoomName(possibleRoom)) {
+          currentSection = possibleRoom;
         }
 
-        const status = largeCellText(row[statusColIdx]).toLowerCase();
-        const selected =
-          status === 'yes' ||
-          status === 'y' ||
-          status === 'true' ||
-          status === '1';
-
-        const category = largeCellText(row[catColIdx]);
-        const details = largeCellText(row[descColIdx]);
-
-        let description = '';
-        if (category && details) {
-          description = `${category}: ${details}`;
-        } else {
-          description = category || details;
+        const furtherInfo = largeCellText(row[descColIdx]);
+        if (!largeHasUsefulFurtherInformation(furtherInfo)) {
+          continue;
         }
 
-        pushLargeParsedItem(items, currentSection, description, 1, 'Item', selected);
+        const category = largeCellText(row[typeColIdx]);
+        const description = largeBuildStructuredDescription(category, furtherInfo);
+
+        pushLargeParsedItem(items, currentSection, description, 1, 'Item', true, {
+          preserveRoom: true,
+          category,
+          sourceOrder: r + (workbook.SheetNames.indexOf(sheetName) * 100000),
+          sourceSheet: sheetName,
+          sourceRow: r + 1
+        });
       }
 
       return;
@@ -2860,7 +2955,14 @@ function parseLargeExcelWorkbook(filePath, originalName) {
     }
   });
 
-  const cleanedItems = items.map(({ _largeKey, ...item }) => item);
+  const cleanedItems = items
+    .map(({ _largeKey, ...item }, index) => ({
+      ...item,
+      sourceOrder: Number.isFinite(Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex)) ? Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex) : index,
+      sortOrder: Number.isFinite(Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex)) ? Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex) : index,
+      originalIndex: Number.isFinite(Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder)) ? Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder) : index
+    }))
+    .sort((a, b) => Number(a.sourceOrder) - Number(b.sourceOrder));
 
   console.log(`[Large Excel Parser] Extracted ${cleanedItems.length} items from ${originalName}.`);
 
@@ -3056,127 +3158,58 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
         let itemIdx = 0, descIdx = 1, unitIdx = 2, qtyIdx = 3, rateIdx = 4;
         let headerRowIdx = -1;
 
-        // Checklist / Scoping sheet detection
-        let statusColIdx = -1;
-        const colVotes = [];
-        for (let c = 0; c < 25; c++) colVotes[c] = { yes: 0, no: 0 };
-
-        for (let r = 0; r < rows.length; r++) {
-          const row = rows[r];
-          if (!row || !Array.isArray(row)) continue;
-          row.forEach((cell, idx) => {
-            if (cell === null || cell === undefined || idx >= 25) return;
-            const str = String(cell).trim().toLowerCase();
-            if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[idx].yes++;
-            if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[idx].no++;
-          });
-        }
-
-        for (let idx = 0; idx < colVotes.length; idx++) {
-          if (colVotes[idx].yes + colVotes[idx].no >= 2) {
-            statusColIdx = idx;
-            break;
-          }
-        }
+        const checklistColumns = largeFindChecklistColumns(rows);
 
         let cleanedLines = [];
         let currentSection = name || 'General';
 
-        if (statusColIdx !== -1) {
-          // Fixed checklist column mapping:
-          // Room = column A, Type = column B, Required Yes/No = column C, Further Information = column D
-          const roomColIdx = 0;
-          const catColIdx = 1;
-          const descColIdx = 3;
+        if (checklistColumns) {
+          const { roomColIdx, typeColIdx, descColIdx, headerRowIdx } = checklistColumns;
 
-          console.log(`[Excel Pre-filter] Checklist sheet detected: "${name}". statusColIdx=${statusColIdx}, catColIdx=${catColIdx}, descColIdx=${descColIdx}`);
+          console.log(`[Excel Pre-filter] Structured SOR/scope sheet detected: "${name}". roomColIdx=${roomColIdx}, typeColIdx=${typeColIdx}, descColIdx=${descColIdx}`);
 
           for (let r = 0; r < rows.length; r++) {
             const row = rows[r];
             if (!row || !Array.isArray(row) || row.length === 0) continue;
+            if (headerRowIdx !== -1 && r <= headerRowIdx) continue;
 
-            // Section header detection when status is empty
-            if (!row[statusColIdx] || String(row[statusColIdx]).trim() === '') {
-              const cells = row.filter(c => c !== null && c !== undefined && String(c).trim().length > 3);
-              if (cells.length === 1) {
-                const potentialSection = String(cells[0]).trim();
-                if (potentialSection.toLowerCase() !== 'yes' && potentialSection.toLowerCase() !== 'no') {
-                  currentSection = potentialSection;
-                }
-              }
+            if (largeLooksLikeSectionRow(row)) {
+              const potentialSection = largeCellText(row.find(Boolean));
+              if (largeLooksLikeRoomName(potentialSection)) currentSection = potentialSection;
+              continue;
             }
 
-            // Capture left-column room name only when it looks like an actual room/area.
-            // Do NOT treat long descriptions, addresses, costs, or notes as room names.
-            if (row[roomColIdx] && String(row[roomColIdx]).trim().length > 1) {
-              const possibleSection = String(row[roomColIdx]).trim();
-              const lowerSection = possibleSection.toLowerCase();
-
-              const blockedSectionWords = [
-                'address',
-                'cost',
-                'duration',
-                'capital expenditure',
-                'compliance',
-                'allow for',
-                'asbestos survey',
-                'asbestos abatement',
-                'management plan',
-                'retest',
-                'capital',
-                'break down',
-                'breakdown',
-                'works shall',
-                'shall include'
-              ];
-
-              const looksBlocked = blockedSectionWords.some(word => lowerSection.includes(word));
-              const tooLongForRoom = possibleSection.length > 45;
-
-              if (
-                !looksBlocked &&
-                !tooLongForRoom &&
-                lowerSection !== 'yes' &&
-                lowerSection !== 'no'
-              ) {
-                currentSection = possibleSection;
-              }
+            const possibleRoom = largeCellText(row[roomColIdx]);
+            if (largeLooksLikeRoomName(possibleRoom)) {
+              currentSection = possibleRoom;
             }
-            const status = String(row[statusColIdx] || '').trim().toLowerCase();
-            const isSelected = (status === 'yes' || status === 'y' || status === 'true' || status === '1');
 
-            const cat = catColIdx !== -1 && row[catColIdx] ? String(row[catColIdx]).trim() : '';
-            const details = descColIdx !== -1 && row[descColIdx] ? String(row[descColIdx]).trim() : '';
-            if (!details && !cat) continue;
-
-            const roomName = row[roomColIdx] && String(row[roomColIdx]).trim()
-              ? String(row[roomColIdx]).trim()
-              : currentSection || 'General';
-            const workType = cat || '';
-            const furtherInfo = details || '';
-
-            let fullDescription = '';
-
-            if (workType && furtherInfo) {
-              fullDescription = `${workType}: ${furtherInfo}`;
-            } else if (workType) {
-              fullDescription = workType;
-            } else {
-              fullDescription = furtherInfo;
+            const furtherInfo = largeCellText(row[descColIdx]);
+            if (!largeHasUsefulFurtherInformation(furtherInfo)) {
+              continue;
             }
+
+            const workType = largeCellText(row[typeColIdx]);
+            const fullDescription = largeBuildStructuredDescription(workType, furtherInfo);
 
             if (isInformationalOnly(fullDescription.toLowerCase())) {
               continue;
             }
 
+            const sourceOrder = r + (workbook.SheetNames.indexOf(name) * 100000);
             extractedItems.push({
-              section: roomName,
+              section: currentSection || 'General',
               category: workType,
               description: fullDescription,
-              status: isSelected ? 'Yes' : 'No',
-              selected: isSelected,
+              status: 'Yes',
+              selected: true,
               quantity: 1,
-              unit: 'Item'
+              unit: 'Item',
+              sourceOrder,
+              sortOrder: sourceOrder,
+              originalIndex: sourceOrder,
+              sourceSheet: name,
+              sourceRow: r + 1
             });
           }
         } else {
@@ -3425,6 +3458,17 @@ Structure for each object:
         throw new Error('Gemini API file analysis failed: ' + geminiError.message);
       }
     }
+
+    extractedItems = extractedItems
+      .map((item, index) => ({
+        ...item,
+        sourceOrder: Number.isFinite(Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex)) ? Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex) : index,
+        sortOrder: Number.isFinite(Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex)) ? Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex) : index,
+        originalIndex: Number.isFinite(Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder)) ? Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder) : index,
+        status: item.status || 'Yes',
+        selected: item.selected !== false
+      }))
+      .sort((a, b) => Number(a.sourceOrder) - Number(b.sourceOrder));
 
     res.json({ success: true, filename: req.file.originalname, items: extractedItems });
 

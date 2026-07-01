@@ -1061,18 +1061,27 @@ if (looksLikeHtml) {
         if (searchInput) searchInput.value = '';
         this.state.importPreviewFilter = '';
 
-        // Extract all unique room/section names from items (without ignoring any)
-        this.state.importPreview.items = (this.state.importPreview.items || []).map(item => {
-            const cleanSection = String(item.section || 'General')
-                .replace(/^[^A-Za-z0-9]+/, '')
-                .replace(/\s+/g, ' ')
-                .trim() || 'General';
+        // Clean rooms and preserve the exact source/SOR order from the spreadsheet parser.
+        this.state.importPreview.items = (this.state.importPreview.items || [])
+            .map((item, index) => {
+                const cleanSection = String(item.section || 'General')
+                    .replace(/^[^A-Za-z0-9]+/, '')
+                    .replace(/\s+/g, ' ')
+                    .trim() || 'General';
 
-            return {
-                ...item,
-                section: cleanSection
-            };
-        });
+                const orderCandidate = Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex ?? index);
+                const sourceOrder = Number.isFinite(orderCandidate) ? orderCandidate : index;
+
+                return {
+                    ...item,
+                    section: cleanSection,
+                    sourceOrder,
+                    sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : sourceOrder,
+                    originalIndex: Number.isFinite(Number(item.originalIndex)) ? Number(item.originalIndex) : sourceOrder,
+                    selected: item.selected !== false
+                };
+            })
+            .sort((a, b) => Number(a.sourceOrder) - Number(b.sourceOrder));
 
         const allRooms = [...new Set(this.state.importPreview.items.map(item => item.section || 'General').filter(r => r && r.trim() !== ''))];
         // Keep rooms in the same order as the import.
