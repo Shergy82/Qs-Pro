@@ -164,16 +164,9 @@ function localHeuristicExcelParser(filePath) {
           const row = rows[r];
           if (!row || !Array.isArray(row) || row.length === 0) continue;
 
-          // Section header detection when status is empty
-          if (!row[statusColIdx] || String(row[statusColIdx]).trim() === '') {
-            const cells = row.filter(c => c !== null && c !== undefined && String(c).trim().length > 3);
-            if (cells.length === 1) {
-              const potentialSection = String(cells[0]).trim();
-              if (potentialSection.toLowerCase() !== 'yes' && potentialSection.toLowerCase() !== 'no') {
-                currentSection = potentialSection;
-              }
-            }
-          }
+          // In structured SOR sheets, keep the Room column as the source of truth.
+          // One-cell headings such as Ground Floor or External Decoration are headings,
+          // not the room/area for pricing rows.
 
           // Capture the left-column merged room/area and fill it down.
           if (largeLooksLikeRoomName(row[0])) {
@@ -2571,6 +2564,9 @@ function largeIsBlankOrHeaderText(value) {
     lower === 'description' ||
     lower === 'details' ||
     lower === 'scope' ||
+    lower === 'notes' ||
+    lower === 'note' ||
+    lower === 'requirement' ||
     lower === 'work description';
 }
 
@@ -2737,7 +2733,7 @@ function largeLooksLikeSectionRow(row) {
 }
 
 function largeSkipSheet(sheetName) {
-  const lower = String(sheetName || '').toLowerCase();
+  const lower = String(sheetName || '').toLowerCase().trim();
 
   return (
     lower.includes('collection') ||
@@ -2746,7 +2742,14 @@ function largeSkipSheet(sheetName) {
     lower.includes('index') ||
     lower.includes('instruction') ||
     lower.includes('prelim cover') ||
-    lower.includes('contents')
+    lower.includes('contents') ||
+    lower.includes('list look up') ||
+    lower.includes('lookup') ||
+    lower.includes('general specification') ||
+    lower === 'specification' ||
+    lower.includes('compliance') ||
+    lower.includes('cost breakdown') ||
+    lower === 'sheet1'
   );
 }
 
@@ -2850,11 +2853,8 @@ function parseLargeExcelWorkbook(filePath, originalName) {
         if (!Array.isArray(row) || row.length === 0) continue;
         if (headerRowIdx !== -1 && r <= headerRowIdx) continue;
 
-        if (largeLooksLikeSectionRow(row)) {
-          const sectionText = largeCellText(row.find(Boolean));
-          if (largeLooksLikeRoomName(sectionText)) currentSection = sectionText;
-          continue;
-        }
+        // Do not update currentSection from one-cell headings in structured sheets.
+        // The merged/fill-down Room column is the authoritative section/room.
 
         const possibleRoom = largeCellText(row[roomColIdx]);
         if (largeLooksLikeRoomName(possibleRoom)) {
@@ -3075,6 +3075,38 @@ app.post('/api/analyze-document-large', requireAuth, async (req, res) => {
   }
 });
 
+function largeWorkbookHasStructuredFurtherInfoSheet(filePath) {
+  try {
+    const workbook = XLSX.readFile(filePath, {
+      sheetRows: LARGE_EXCEL_SHEET_ROW_LIMIT,
+      cellDates: false,
+      cellNF: false,
+      cellStyles: false
+    });
+
+    for (const sheetName of workbook.SheetNames) {
+      if (largeSkipSheet(sheetName)) continue;
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: false,
+        defval: ''
+      });
+
+      const columns = largeFindChecklistColumns(rows);
+      if (columns && columns.descColIdx !== -1) {
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('[Structured SOR Parser] Detection failed:', err.message);
+  }
+
+  return false;
+}
+
 // --- Document Analysis API ---
 app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req, res) => {
   if (!ai) return res.status(500).json({ error: 'Gemini API key is not configured.' });
@@ -3084,14 +3116,36 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
     const parserVersion = req.body.parserVersion || 'legacy';
     console.log(`[Document Analyzer] Requested parser version: ${parserVersion}`);
 
+    const isExcelUpload = req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      req.file.mimetype === 'application/vnd.ms-excel' ||
+      req.file.mimetype === 'text/csv' ||
+      req.file.originalname.toLowerCase().endsWith('.xlsx') ||
+      req.file.originalname.toLowerCase().endsWith('.xls') ||
+      req.file.originalname.toLowerCase().endsWith('.csv');
+
+    // Structured SOR/specification workbooks must be parsed deterministically.
+    // Do this before the AI/strategy registry so the app does not import blank
+    // Yes/No rows, property notes, compliance sheets, or type-only rows.
+    if (isExcelUpload && largeWorkbookHasStructuredFurtherInfoSheet(req.file.path)) {
+      console.log('[Document Analyzer] Structured Further Information workbook detected. Using deterministic SOR parser.');
+      const extractedItems = parseLargeExcelWorkbook(req.file.path, req.file.originalname)
+        .map((item, index) => ({
+          ...item,
+          sourceOrder: Number.isFinite(Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex)) ? Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex) : index,
+          sortOrder: Number.isFinite(Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex)) ? Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex) : index,
+          originalIndex: Number.isFinite(Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder)) ? Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder) : index,
+          status: 'Yes',
+          selected: true
+        }))
+        .sort((a, b) => Number(a.sourceOrder) - Number(b.sourceOrder));
+
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.json({ success: true, filename: req.file.originalname, items: extractedItems });
+    }
+
     let selectedStrategy = null;
     if (parserVersion === 'auto') {
-      const isExcel = req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        req.file.mimetype === 'application/vnd.ms-excel' ||
-        req.file.mimetype === 'text/csv' ||
-        req.file.originalname.toLowerCase().endsWith('.xlsx') ||
-        req.file.originalname.toLowerCase().endsWith('.xls') ||
-        req.file.originalname.toLowerCase().endsWith('.csv');
+      const isExcel = isExcelUpload;
 
       let workbook = null;
       if (isExcel) {
@@ -3139,14 +3193,7 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
       let cleanedTotalRows = 0;
 
       workbook.SheetNames.forEach(name => {
-        const nameLower = name.toLowerCase();
-        // Skip collection, summary, totals, index, instructions, or preliminaries sheets
-        if (nameLower.includes('collection') ||
-          nameLower.includes('summary') ||
-          nameLower.includes('total') ||
-          nameLower.includes('index') ||
-          nameLower.includes('instruction') ||
-          nameLower.includes('prelim')) {
+        if (largeSkipSheet(name)) {
           console.log(`[Excel Analyzer] Skipping sheet: ${name}`);
           return;
         }
@@ -3173,11 +3220,8 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
             if (!row || !Array.isArray(row) || row.length === 0) continue;
             if (headerRowIdx !== -1 && r <= headerRowIdx) continue;
 
-            if (largeLooksLikeSectionRow(row)) {
-              const potentialSection = largeCellText(row.find(Boolean));
-              if (largeLooksLikeRoomName(potentialSection)) currentSection = potentialSection;
-              continue;
-            }
+            // Do not update currentSection from one-cell headings in structured sheets.
+            // The merged/fill-down Room column is the authoritative section/room.
 
             const possibleRoom = largeCellText(row[roomColIdx]);
             if (largeLooksLikeRoomName(possibleRoom)) {

@@ -1042,6 +1042,35 @@ if (looksLikeHtml) {
 
         if (btnProcess) btnProcess.disabled = false;
     }
+    isUsefulImportPreviewItem(item) {
+        const description = String(item?.description || '').replace(/\s+/g, ' ').trim();
+        const section = String(item?.section || '').replace(/\s+/g, ' ').trim();
+        const category = String(item?.category || '').replace(/\s+/g, ' ').trim();
+        const status = String(item?.status || '').trim().toLowerCase();
+
+        if (description.length < 5) return false;
+
+        const lower = description.toLowerCase();
+        const categoryLower = category.toLowerCase();
+        const sectionLower = section.toLowerCase();
+
+        const typeOnly = [
+            'ceiling', 'ceilings', 'walls', 'wall', 'woodwork', 'floors', 'floor',
+            'windows', 'window', 'curtains', 'curtain rails', 'curtain/rails',
+            'skirting', 'door', 'doors', 'additional', 'fireplace', 'sockets',
+            'lighting', 'loft hatches', 'asbestos survey', 'lead survey'
+        ];
+
+        if (typeOnly.includes(lower)) return false;
+        if (categoryLower && lower === categoryLower) return false;
+        if (sectionLower && lower === sectionLower) return false;
+        if ((status === 'no' || status === 'n') && description.length < 35 && !/[.,:;]|\b(remove|install|repair|prepare|replace|make good|allow|supply|fit|decorate|clean|seal|strip|rake|fill)\b/i.test(description)) {
+            return false;
+        }
+
+        return true;
+    }
+
     async showImportPreview() {
         if (!this.state.importPreview) return;
         const modal = document.getElementById('import-preview-modal');
@@ -1063,6 +1092,7 @@ if (looksLikeHtml) {
 
         // Clean rooms and preserve the exact source/SOR order from the spreadsheet parser.
         this.state.importPreview.items = (this.state.importPreview.items || [])
+            .filter(item => this.isUsefulImportPreviewItem(item))
             .map((item, index) => {
                 const cleanSection = String(item.section || 'General')
                     .replace(/^[^A-Za-z0-9]+/, '')

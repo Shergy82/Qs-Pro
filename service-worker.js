@@ -1,15 +1,15 @@
-const CACHE_NAME = 'qs-pro-ai-pwa-v16';
+const CACHE_NAME = 'qs-pro-ai-pwa-v18';
 
 const APP_SHELL = [
   '/',
   '/index.html',
   '/styles.css?v=mobile-12',
-  '/app.js?v=import-order-1',
+  '/app.js?v=import-order-3',
   '/components/takeoff.js',
-  '/components/pricing.js?v=mobile-cost-3',
+  '/components/pricing.js?v=mobile-cost-4',
   '/components/library.js',
   '/components/advisor.js',
-  '/components/proposal.js?v=mobile-pdf-7',
+  '/components/proposal.js?v=mobile-pdf-8',
   '/assets/gvd-logo.png',
   '/manifest.webmanifest'
 ];
