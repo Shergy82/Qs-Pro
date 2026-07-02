@@ -115,8 +115,19 @@ class PricingComponent {
     }
 
     isWindowDoorItem(rate) {
-        const text = `${rate?.desc || ''} ${rate?.section || ''} ${rate?.room || ''}`.toLowerCase();
-        return /\b(window|windows|door|doors|upvc|u\.?p\.?v\.?c|composite|glazing|glazed|casement|sash|french door|patio door)\b/.test(text);
+        const text = `${rate?.desc || ''} ${rate?.section || ''} ${rate?.room || ''}`
+            .toLowerCase()
+            .replace(/[\/\-]+/g, ' ');
+
+        // Only show the window/door configurator for actual replacement/supply/install
+        // scopes. Do not trigger it for doorway render repairs, door openings, decoration,
+        // making good around doors, or other incidental mentions of "door".
+        const hasWindowOrDoorProduct = /\b(window|windows|door|doors|upvc|u\.?p\.?v\.?c|composite|glazing|glazed|casement|sash|french door|patio door|sliding door|entrance door|bi\s?fold)\b/.test(text);
+        const hasReplacementScope = /\b(replace|replacement|renew|renewal|remove existing|supply|install|installation|fit|fitting|provide|new)\b/.test(text);
+        const isIncidentalDoorWork = /\b(doorway|door way|door opening|opening|reveal|around the door|door repairs?|doorway repairs?|render repairs?|make good|redecorate|decoration|strip back|loose and failed render)\b/.test(text)
+            && !/\b(upvc|u\.?p\.?v\.?c|composite|glazing|glazed|casement|sash|french door|patio door|sliding door|entrance door|bi\s?fold|replace|replacement|renew|supply|install|new)\b/.test(text);
+
+        return hasWindowOrDoorProduct && hasReplacementScope && !isIncidentalDoorWork;
     }
 
     getWindowDoorStorageKey(rate) {
