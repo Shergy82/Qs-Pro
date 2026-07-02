@@ -998,6 +998,29 @@
                             </div>
                         </div>
 
+
+                        <!-- Window / Door Configurator: appears only for window and door replacement items -->
+                        <div id="window-door-configurator" style="display: none; background: rgba(16, 185, 129, 0.035); padding: 12px; border-radius: var(--border-radius-sm); border: 1px dashed rgba(16, 185, 129, 0.25); margin-bottom: 12px;">
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px;">
+                                <div>
+                                    <h4 class="text-xs uppercase font-bold tracking-wider" style="color: var(--color-emerald); margin-bottom:4px;">Window / Door Breakdown</h4>
+                                    <p class="text-xs text-secondary" style="line-height:1.35; margin:0;">Tick the window/door groups included in this item. AI will use the quantity, material/type, glazing and style for the cost-only rate.</p>
+                                </div>
+                                <label class="text-xs text-secondary" style="display:flex; align-items:center; gap:6px; white-space:nowrap; padding-top:2px;">
+                                    <input type="checkbox" id="wd-use-qty" checked onchange="pricingComponent.updateWindowDoorSummary()">
+                                    Use as item qty
+                                </label>
+                            </div>
+
+                            <div id="wd-groups-list" style="overflow-x:auto;"></div>
+
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                                <button type="button" class="btn btn-secondary text-xs" style="padding:6px 10px;" onclick="pricingComponent.addWindowDoorGroup('window')">+ Add Window Type</button>
+                                <button type="button" class="btn btn-secondary text-xs" style="padding:6px 10px;" onclick="pricingComponent.addWindowDoorGroup('door')">+ Add Door Type</button>
+                            </div>
+                            <div id="wd-summary" class="text-xs text-secondary" style="margin-top:8px; line-height:1.35;">No checked window/door quantities selected yet.</div>
+                        </div>
+
                         <h4 class="text-xs text-secondary uppercase font-bold tracking-wider mb-2">Cost Breakdown</h4>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                             <div>
@@ -1427,7 +1450,7 @@
     <!-- JavaScript Files -->
     <script src="app.js?v=import-order-3"></script>
     <script src="components/takeoff.js"></script>
-    <script src="components/pricing.js?v=mobile-cost-4"></script>
+    <script src="components/pricing.js?v=window-door-1"></script>
     <script src="components/library.js"></script>
     <script src="components/advisor.js"></script>
     <script src="components/proposal.js?v=mobile-pdf-8"></script>

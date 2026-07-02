@@ -11,6 +11,7 @@ class PricingComponent {
         this.priceLibrary = [];
         this.addMode = 'library';
         this.sorAppliedOrder = [];
+        this.windowDoorGroupSeq = 0;
     }
 
     init() {
@@ -104,19 +105,260 @@ class PricingComponent {
         }) || null;
     }
 
+    escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    isWindowDoorItem(rate) {
+        const text = `${rate?.desc || ''} ${rate?.section || ''} ${rate?.room || ''}`.toLowerCase();
+        return /\b(window|windows|door|doors|upvc|u\.?p\.?v\.?c|composite|glazing|glazed|casement|sash|french door|patio door)\b/.test(text);
+    }
+
+    getWindowDoorStorageKey(rate) {
+        const workspace = app?.state?.activeWorkspaceId || 'global';
+        const rateKey = rate?.backendId || rate?.code || this.normaliseMatchText(rate?.desc || '').slice(0, 60);
+        return `qs_pro_window_door_spec_${workspace}_${rateKey}`;
+    }
+
+    getSavedWindowDoorSpec(rate) {
+        if (!rate) return null;
+        if (rate.windowDoorSpec) return rate.windowDoorSpec;
+        try {
+            const raw = localStorage.getItem(this.getWindowDoorStorageKey(rate));
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    saveWindowDoorSpec(rate, spec) {
+        if (!rate || !spec) return;
+        rate.windowDoorSpec = spec;
+        try {
+            localStorage.setItem(this.getWindowDoorStorageKey(rate), JSON.stringify(spec));
+        } catch (e) {
+            console.warn('Could not save window/door pricing spec locally.', e);
+        }
+    }
+
+    makeWindowDoorGroup(kind = 'window', qty = 1, enabled = true) {
+        this.windowDoorGroupSeq += 1;
+        return {
+            id: `wd-${Date.now()}-${this.windowDoorGroupSeq}`,
+            enabled,
+            kind,
+            qty: Number(qty) || 0,
+            material: kind === 'door' ? 'Composite' : 'uPVC',
+            glazing: kind === 'door' ? 'Part glazed' : 'Double glazed',
+            style: kind === 'door' ? 'Entrance door' : 'Casement',
+            notes: ''
+        };
+    }
+
+    getDefaultWindowDoorSpec(rate) {
+        const text = `${rate?.desc || ''} ${rate?.section || ''}`.toLowerCase();
+        const qty = Math.max(1, Number(rate?.qty) || 1);
+        const hasWindow = /\b(window|windows|upvc|u\.?p\.?v\.?c|casement|sash|glazing|glazed)\b/.test(text);
+        const hasDoor = /\b(door|doors|composite|french door|patio door)\b/.test(text);
+        const groups = [];
+
+        if (hasWindow || !hasDoor) {
+            groups.push(this.makeWindowDoorGroup('window', qty, true));
+        }
+        if (hasDoor) {
+            groups.push(this.makeWindowDoorGroup('door', hasWindow ? 0 : qty, hasWindow ? false : true));
+        }
+
+        return {
+            useQuantity: true,
+            groups
+        };
+    }
+
+    renderWindowDoorGroups(groups = []) {
+        const list = document.getElementById('wd-groups-list');
+        if (!list) return;
+        list.innerHTML = '';
+
+        groups.forEach(group => {
+            const div = document.createElement('div');
+            div.className = 'wd-config-row';
+            div.dataset.wdGroupId = group.id || this.makeWindowDoorGroup(group.kind || 'window').id;
+            div.style.cssText = 'display:grid; grid-template-columns: 28px 110px 80px 130px 130px 130px 1fr 34px; gap:8px; align-items:end; padding:8px; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.025); margin-bottom:8px;';
+
+            const kind = group.kind || 'window';
+            const materialOptions = ['uPVC', 'Composite', 'Timber', 'Aluminium', 'Steel', 'Other'];
+            const glazingOptions = ['None', 'Single glazed', 'Double glazed', 'Triple glazed', 'Part glazed', 'Obscure glazed', 'Laminated / toughened'];
+            const styleOptions = ['Casement', 'Sash', 'Fixed', 'Tilt & turn', 'Entrance door', 'French door', 'Patio / sliding door', 'Fire door', 'Other'];
+
+            div.innerHTML = `
+                <label title="Include this group" style="display:flex; align-items:center; justify-content:center; padding-bottom:6px;">
+                    <input type="checkbox" class="wd-enabled" ${group.enabled !== false ? 'checked' : ''} onchange="pricingComponent.updateWindowDoorSummary()">
+                </label>
+                <div>
+                    <label class="text-xs text-secondary block mb-1">Item</label>
+                    <select class="form-select text-xs wd-kind" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                        <option value="window" ${kind === 'window' ? 'selected' : ''}>Window</option>
+                        <option value="door" ${kind === 'door' ? 'selected' : ''}>Door</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-secondary block mb-1">Qty</label>
+                    <input type="number" class="form-input text-xs wd-qty" value="${Number(group.qty) || 0}" min="0" step="1" style="height:32px; padding:5px 8px;" oninput="pricingComponent.updateWindowDoorSummary()">
+                </div>
+                <div>
+                    <label class="text-xs text-secondary block mb-1">Material / Type</label>
+                    <select class="form-select text-xs wd-material" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                        ${materialOptions.map(opt => `<option value="${this.escapeHtml(opt)}" ${String(group.material || '') === opt ? 'selected' : ''}>${this.escapeHtml(opt)}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-secondary block mb-1">Glazing</label>
+                    <select class="form-select text-xs wd-glazing" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                        ${glazingOptions.map(opt => `<option value="${this.escapeHtml(opt)}" ${String(group.glazing || '') === opt ? 'selected' : ''}>${this.escapeHtml(opt)}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-secondary block mb-1">Style</label>
+                    <select class="form-select text-xs wd-style" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                        ${styleOptions.map(opt => `<option value="${this.escapeHtml(opt)}" ${String(group.style || '') === opt ? 'selected' : ''}>${this.escapeHtml(opt)}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-secondary block mb-1">Notes / sizes</label>
+                    <input type="text" class="form-input text-xs wd-notes" value="${this.escapeHtml(group.notes || '')}" placeholder="e.g. multi-chamber profiles, trickle vents" style="height:32px; padding:5px 8px;" oninput="pricingComponent.updateWindowDoorSummary()">
+                </div>
+                <button type="button" class="btn btn-secondary text-xs" style="height:32px; padding:5px 8px;" onclick="pricingComponent.removeWindowDoorGroup('${this.escapeHtml(div.dataset.wdGroupId)}')">×</button>
+            `;
+            list.appendChild(div);
+        });
+
+        this.updateWindowDoorSummary();
+    }
+
+    populateWindowDoorConfigurator(rate) {
+        const container = document.getElementById('window-door-configurator');
+        if (!container) return;
+
+        if (!this.isWindowDoorItem(rate)) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        const spec = this.getSavedWindowDoorSpec(rate) || this.getDefaultWindowDoorSpec(rate);
+        const useQty = document.getElementById('wd-use-qty');
+        if (useQty) useQty.checked = spec.useQuantity !== false;
+        this.renderWindowDoorGroups(spec.groups || []);
+    }
+
+    addWindowDoorGroup(kind = 'window') {
+        const spec = this.collectWindowDoorSpecFromModal({ allowEmpty: true }) || { useQuantity: true, groups: [] };
+        spec.groups.push(this.makeWindowDoorGroup(kind, 1, true));
+        this.renderWindowDoorGroups(spec.groups);
+        const useQty = document.getElementById('wd-use-qty');
+        if (useQty) useQty.checked = spec.useQuantity !== false;
+    }
+
+    removeWindowDoorGroup(id) {
+        const row = Array.from(document.querySelectorAll('.wd-config-row')).find(el => String(el.dataset.wdGroupId) === String(id));
+        if (row) row.remove();
+        this.updateWindowDoorSummary();
+    }
+
+    collectWindowDoorSpecFromModal(options = {}) {
+        const container = document.getElementById('window-door-configurator');
+        if (!container || container.style.display === 'none') return null;
+
+        const groups = Array.from(document.querySelectorAll('.wd-config-row')).map(row => ({
+            id: row.dataset.wdGroupId || `wd-${Date.now()}`,
+            enabled: !!row.querySelector('.wd-enabled')?.checked,
+            kind: row.querySelector('.wd-kind')?.value || 'window',
+            qty: Math.max(0, Number(row.querySelector('.wd-qty')?.value) || 0),
+            material: row.querySelector('.wd-material')?.value || '',
+            glazing: row.querySelector('.wd-glazing')?.value || '',
+            style: row.querySelector('.wd-style')?.value || '',
+            notes: row.querySelector('.wd-notes')?.value || ''
+        }));
+
+        if (!options.allowEmpty && groups.length === 0) return null;
+
+        const totalQty = groups
+            .filter(g => g.enabled)
+            .reduce((sum, g) => sum + (Number(g.qty) || 0), 0);
+
+        return {
+            useQuantity: !!document.getElementById('wd-use-qty')?.checked,
+            totalQty,
+            groups
+        };
+    }
+
+    buildWindowDoorScopeText(spec) {
+        if (!spec || !Array.isArray(spec.groups)) return '';
+        const included = spec.groups.filter(g => g.enabled && Number(g.qty) > 0);
+        if (included.length === 0) return '';
+
+        const lines = included.map(g => {
+            const label = g.kind === 'door' ? 'door(s)' : 'window(s)';
+            const notes = g.notes ? `, notes/sizes: ${g.notes}` : '';
+            return `- ${g.qty} ${label}: ${g.material || 'type not selected'}, ${g.glazing || 'glazing not selected'}, ${g.style || 'style not selected'}${notes}`;
+        });
+
+        return `Window/door breakdown for AI pricing (cost-only):\n${lines.join('\n')}\nTotal checked units: ${included.reduce((sum, g) => sum + (Number(g.qty) || 0), 0)}.`;
+    }
+
+    updateWindowDoorSummary() {
+        const spec = this.collectWindowDoorSpecFromModal({ allowEmpty: true });
+        const summary = document.getElementById('wd-summary');
+        if (!summary || !spec) return;
+
+        const included = spec.groups.filter(g => g.enabled && Number(g.qty) > 0);
+        const windowQty = included.filter(g => g.kind === 'window').reduce((sum, g) => sum + Number(g.qty || 0), 0);
+        const doorQty = included.filter(g => g.kind === 'door').reduce((sum, g) => sum + Number(g.qty || 0), 0);
+        const total = windowQty + doorQty;
+
+        summary.innerText = total > 0
+            ? `Selected for AI: ${windowQty} window(s), ${doorQty} door(s), ${total} total unit(s).${spec.useQuantity ? ' Save will also update the item quantity to this total.' : ''}`
+            : 'No checked window/door quantities selected yet.';
+
+        const qtyInput = document.getElementById('rate-qty-input');
+        if (spec.useQuantity && total > 0 && qtyInput) {
+            qtyInput.value = total;
+        }
+    }
+
     getCostOnlyAIRequestBody(rate) {
         const unit = this.normaliseUnit(rate.unit);
         const unitLabel = this.displayUnit(unit);
-        const instruction = `Return a direct company cost-only unit rate for this scope. Exclude main-contractor overheads, preliminaries, profit, risk allowance, contingency, VAT and tender markup. The proposal markup/margin slider will add uplift later. Return the rate per ${unitLabel}; do not convert it into a line total.`;
+
+        let windowDoorSpec = this.getSavedWindowDoorSpec(rate);
+        if (this.activeRateModal && String(this.activeRateModal.code) === String(rate.code)) {
+            const modalSpec = this.collectWindowDoorSpecFromModal({ allowEmpty: true });
+            if (modalSpec) {
+                windowDoorSpec = modalSpec;
+                rate.windowDoorSpec = modalSpec;
+            }
+        }
+        const windowDoorScope = this.buildWindowDoorScopeText(windowDoorSpec);
+
+        const instruction = `Return a direct company cost-only unit rate for this scope. Exclude main-contractor overheads, preliminaries, profit, risk allowance, contingency, VAT and tender markup. The proposal markup/margin slider will add uplift later. Return the rate per ${unitLabel}; do not convert it into a line total. If a window/door breakdown is supplied, use the selected quantities, material/type, glazing and style to assess the correct base cost.`;
+        const description = `${rate.desc}${windowDoorScope ? `\n\n${windowDoorScope}` : ''}\n\nCost-only pricing instruction: ${instruction}`;
 
         return {
-            description: `${rate.desc}\n\nCost-only pricing instruction: ${instruction}`,
+            description,
             originalDescription: rate.desc,
             unit: unit,
             unitLabel: unitLabel,
-            quantity: Number(rate.qty) || 1,
+            quantity: windowDoorSpec?.useQuantity && Number(windowDoorSpec?.totalQty) > 0 ? Number(windowDoorSpec.totalQty) : (Number(rate.qty) || 1),
             category: rate.category || '',
-            pricingBasis: 'direct_company_cost_only_excluding_overheads_profit_markup_vat'
+            pricingBasis: 'direct_company_cost_only_excluding_overheads_profit_markup_vat',
+            windowDoorSpec: windowDoorSpec || undefined
         };
     }
 
@@ -303,6 +545,7 @@ class PricingComponent {
             const rateCost = this.getRateCost(r);
             const total = ((Number(r.qty) || 0) * rateCost).toFixed(2);
             const linkActive = this.pendingLinkRateCode && String(this.pendingLinkRateCode) === String(r.code);
+            const adjustLabel = this.isWindowDoorItem(r) ? 'Configure' : 'Adjust';
 
             const unitOptions = `
                 <option value="Nr" ${selectedUnit === 'Nr' ? 'selected' : ''}>Nr</option>
@@ -330,7 +573,7 @@ class PricingComponent {
                                 <div><span>Total</span><strong class="text-emerald">£${total}</strong></div>
                             </div>
                             <div class="mobile-pricing-actions" style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:10px;">
-                                <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.editRate('${r.code}')">Adjust</button>
+                                <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.editRate('${r.code}')">${adjustLabel}</button>
                                 <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.startOrCompleteLinkRate('${r.code}')">${linkActive ? 'Linking...' : 'Link Item'}</button>
                                 <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.addRateToLibrary('${r.code}')">Add Library</button>
                                 <button class="btn btn-secondary mobile-pricing-adjust" onclick="pricingComponent.removeRate('${r.code}')">Remove</button>
@@ -349,7 +592,7 @@ class PricingComponent {
                     <td class="text-right font-bold text-emerald">£${total}</td>
                     <td class="text-right">
                         <div style="display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap;">
-                            <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.editRate('${r.code}')">Adjust</button>
+                            <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.editRate('${r.code}')">${adjustLabel}</button>
                             <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.startOrCompleteLinkRate('${r.code}')">${linkActive ? 'Linking...' : 'Link'}</button>
                             <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.addRateToLibrary('${r.code}')">Library</button>
                             <button class="btn btn-secondary py-1 px-3 text-xs" onclick="pricingComponent.removeRate('${r.code}')">Remove</button>
@@ -468,6 +711,7 @@ class PricingComponent {
         }
 
         this.handleUnitChange('adjust', mappedUnit);
+        this.populateWindowDoorConfigurator(rate);
 
         // Populate calculator inputs from memory if available
         if (remembered) {
@@ -531,6 +775,19 @@ class PricingComponent {
         const selectEl = document.getElementById('rate-unit-select');
         if (selectEl) {
             rate.unit = this.normaliseUnit(selectEl.value);
+        }
+
+        const windowDoorSpec = this.collectWindowDoorSpecFromModal({ allowEmpty: true });
+        if (windowDoorSpec) {
+            this.saveWindowDoorSpec(rate, windowDoorSpec);
+            if (windowDoorSpec.useQuantity && Number(windowDoorSpec.totalQty) > 0) {
+                rate.qty = Number(windowDoorSpec.totalQty);
+                rate.unit = 'Item';
+                const qtyInput = document.getElementById('rate-qty-input');
+                const unitInput = document.getElementById('rate-unit-select');
+                if (qtyInput) qtyInput.value = rate.qty;
+                if (unitInput) unitInput.value = 'Item';
+            }
         }
 
         rate.materialRate = parseFloat(document.getElementById('rate-material').value) || 0;
