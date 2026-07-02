@@ -1118,6 +1118,14 @@
                             <div id="wd-summary" class="text-xs text-secondary" style="margin-top:8px; line-height:1.35;">No checked window/door quantities selected yet.</div>
                         </div>
 
+                        <div id="subcontract-mode-panel" style="background: rgba(245, 158, 11, 0.045); border: 1px dashed rgba(245, 158, 11, 0.28); border-radius: var(--border-radius-sm); padding: 10px 12px; margin-bottom: 12px;">
+                            <label class="text-xs text-primary" style="display:flex; align-items:flex-start; gap:8px; font-weight:700; line-height:1.35;">
+                                <input type="checkbox" id="rate-subcontracted" style="margin-top:2px;" onchange="pricingComponent.updateSubcontractMode(true)">
+                                <span>Subcontracted item</span>
+                            </label>
+                            <p class="text-xs text-secondary" style="margin:6px 0 0; line-height:1.4;">Tick this when the work will be carried out by a subcontractor. AI will price the subcontractor package cost to you, including their labour, materials, overhead and profit, but excluding your own tender markup, VAT and contingency.</p>
+                        </div>
+
                         <h4 class="text-xs text-secondary uppercase font-bold tracking-wider mb-2">Cost Breakdown</h4>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                             <div>
@@ -1152,7 +1160,7 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><path d="M12 2a10 10 0 0110 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0112 2z"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                             <span>AI Price Intelligence</span>
                         </h4>
-                        <p class="text-xs text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 16px;">Query AI for a direct company cost-only rate for this task and unit. Overheads, profit, VAT, contingency and tender markup are excluded because the proposal slider adds uplift later.</p>
+                        <p id="ai-pricing-mode-help" class="text-xs text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 16px;">Query AI for a direct company cost-only rate for this task and unit. Overheads, profit, VAT, contingency and tender markup are excluded because the proposal slider adds uplift later.</p>
                         
                         <button type="button" class="btn btn-primary text-xs" id="btn-trigger-ai-lookup" style="padding: 8px 12px;">
                             <span id="ai-lookup-btn-text">AI Cost Rate Lookup</span>
@@ -1162,7 +1170,7 @@
                         <div id="ai-lookup-results" style="display: none; margin-top: 16px;" class="flex-grow flex flex-col justify-between">
                             <div class="space-y-2">
                                 <div class="flex justify-between items-center rounded" style="background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2); padding: 8px 12px; margin-bottom: 8px;">
-                                    <span class="text-xs text-secondary">AI Suggested Base Cost:</span>
+                                    <span class="text-xs text-secondary" id="ai-suggested-label">AI Suggested Base Cost:</span>
                                     <span class="font-bold text-indigo text-sm" id="ai-suggested-val" style="color: var(--color-indigo); font-size: 1rem;">£0.00</span>
                                 </div>
                                 <div class="text-secondary" style="font-size: 0.75rem; line-height: 1.4; margin-bottom: 6px;">
@@ -1547,7 +1555,7 @@
     <!-- JavaScript Files -->
     <script src="app.js?v=import-order-3"></script>
     <script src="components/takeoff.js"></script>
-    <script src="components/pricing.js?v=window-door-3"></script>
+    <script src="components/pricing.js?v=subcontract-1"></script>
     <script src="components/library.js"></script>
     <script src="components/advisor.js"></script>
     <script src="components/proposal.js?v=mobile-pdf-8"></script>

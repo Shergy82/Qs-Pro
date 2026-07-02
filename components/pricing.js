@@ -65,12 +65,17 @@ class PricingComponent {
 
     applyUnitCostToRate(rate, unitCost) {
         const cost = Math.max(0, Number(unitCost) || 0);
+        const isSubcontracted = this.isRateSubcontracted(rate);
         rate.materialRate = 0;
         rate.labourRate = 0;
         rate.plantRate = 0;
         rate.subRate = 0;
 
-        if (rate.category === 'labor' || rate.category === 'labour') {
+        if (isSubcontracted) {
+            rate.subRate = cost;
+            rate.category = 'subcontractor';
+            rate.subcontracted = true;
+        } else if (rate.category === 'labor' || rate.category === 'labour') {
             rate.labourRate = cost;
         } else if (rate.category === 'plant') {
             rate.plantRate = cost;
@@ -85,11 +90,68 @@ class PricingComponent {
         rate.market = cost;
     }
 
+    isRateSubcontracted(rate) {
+        if (!rate) return false;
+        if (rate.subcontracted === true || rate.isSubcontracted === true || rate.subcontractedItem === true) return true;
+        if (String(rate.category || '').toLowerCase() === 'subcontractor') return true;
+        const sub = Number(rate.subRate) || 0;
+        const mat = Number(rate.materialRate) || 0;
+        const lab = Number(rate.labourRate) || 0;
+        const plant = Number(rate.plantRate) || 0;
+        return sub > 0 && mat === 0 && lab === 0 && plant === 0;
+    }
+
+    isModalSubcontracted() {
+        const cb = document.getElementById('rate-subcontracted');
+        return !!cb?.checked;
+    }
+
+    updateSubcontractMode(mergeExisting = false) {
+        const checked = this.isModalSubcontracted();
+        const matEl = document.getElementById('rate-material');
+        const labEl = document.getElementById('rate-labour');
+        const plantEl = document.getElementById('rate-plant');
+        const subEl = document.getElementById('rate-sub');
+        const helpEl = document.getElementById('ai-pricing-mode-help');
+        const suggestedLabel = document.getElementById('ai-suggested-label');
+        const lookupBtnText = document.getElementById('ai-lookup-btn-text');
+
+        if (checked && mergeExisting && matEl && labEl && plantEl && subEl) {
+            const mat = Number(matEl.value) || 0;
+            const lab = Number(labEl.value) || 0;
+            const plant = Number(plantEl.value) || 0;
+            const sub = Number(subEl.value) || 0;
+            const directTotal = mat + lab + plant;
+            if (directTotal > 0 && sub <= 0) {
+                subEl.value = (directTotal + sub).toFixed(2);
+                matEl.value = '0.00';
+                labEl.value = '0.00';
+                plantEl.value = '0.00';
+            }
+        }
+
+        if (helpEl) {
+            helpEl.innerText = checked
+                ? "Query AI for the subcontractor package cost to you. This may include the subcontractor's labour, materials, plant, overhead and profit, but still excludes your own markup, VAT, contingency and tender uplift."
+                : 'Query AI for a direct company cost-only rate for this task and unit. Overheads, profit, VAT, contingency and tender markup are excluded because the proposal slider adds uplift later.';
+        }
+        if (suggestedLabel) {
+            suggestedLabel.innerText = checked ? 'AI Suggested Subcontract Cost:' : 'AI Suggested Base Cost:';
+        }
+        if (lookupBtnText) {
+            lookupBtnText.innerText = checked ? 'AI Subcontract Cost Lookup' : 'AI Cost Rate Lookup';
+        }
+        if (subEl) {
+            subEl.closest('div')?.classList.toggle('subcontract-active-field', checked);
+        }
+        this.calcModalTotal();
+    }
+
     getLibraryCategory(rate) {
         const category = String(rate?.category || '').toLowerCase();
         if (category === 'labor' || category === 'labour') return 'Labour';
         if (category === 'plant') return 'Plant';
-        if (category === 'subcontractor') return 'Subcontractor';
+        if (category === 'subcontractor' || this.isRateSubcontracted(rate)) return 'Subcontractor';
         return 'Material';
     }
 
@@ -360,9 +422,18 @@ class PricingComponent {
             }
         }
         const windowDoorScope = this.buildWindowDoorScopeText(windowDoorSpec);
+        const subcontracted = this.activeRateModal && String(this.activeRateModal.code) === String(rate.code)
+            ? this.isModalSubcontracted()
+            : this.isRateSubcontracted(rate);
 
-        const instruction = `Return a direct company cost-only unit rate for this scope. Exclude main-contractor overheads, preliminaries, profit, risk allowance, contingency, VAT and tender markup. The proposal markup/margin slider will add uplift later. Return the rate per ${unitLabel}; do not convert it into a line total. If a window/door breakdown is supplied, use the selected quantities, material/type, glazing and style to assess the correct base cost.`;
-        const description = `${rate.desc}${windowDoorScope ? `\n\n${windowDoorScope}` : ''}\n\nCost-only pricing instruction: ${instruction}`;
+        const instruction = subcontracted
+            ? `Return the subcontractor package unit cost payable by our company for this scope. Include the subcontractor's labour, materials, plant, normal waste, specialist attendance, subcontractor overhead and subcontractor profit because that is the true cost to us. Exclude only our own main-contractor markup/profit, tender contingency, VAT and client-facing uplift because the proposal markup/margin slider adds our uplift later. Return the cost per ${unitLabel}; do not convert it into a line total.`
+            : `Return a direct company cost-only unit rate for this scope. Exclude subcontractor profit, main-contractor overheads, preliminaries, profit, risk allowance, contingency, VAT and tender markup. The proposal markup/margin slider will add uplift later. Return the rate per ${unitLabel}; do not convert it into a line total. If a window/door breakdown is supplied, use the selected quantities, material/type, glazing and style to assess the correct base cost.`;
+        const description = `${rate.desc}${windowDoorScope ? `
+
+${windowDoorScope}` : ''}
+
+Pricing instruction: ${instruction}`;
 
         return {
             description,
@@ -370,8 +441,9 @@ class PricingComponent {
             unit: unit,
             unitLabel: unitLabel,
             quantity: windowDoorSpec?.useQuantity && Number(windowDoorSpec?.totalQty) > 0 ? Number(windowDoorSpec.totalQty) : (Number(rate.qty) || 1),
-            category: rate.category || '',
-            pricingBasis: 'direct_company_cost_only_excluding_overheads_profit_markup_vat',
+            category: subcontracted ? 'subcontractor' : (rate.category || ''),
+            pricingBasis: subcontracted ? 'subcontractor_package_cost_to_company_including_subcontractor_ohp_excluding_our_markup_vat' : 'direct_company_cost_only_excluding_overheads_profit_markup_vat',
+            subcontracted,
             windowDoorSpec: windowDoorSpec || undefined
         };
     }
@@ -754,6 +826,12 @@ class PricingComponent {
         document.getElementById('rate-labour').value = rate.labourRate || 0;
         document.getElementById('rate-plant').value = rate.plantRate || 0;
         document.getElementById('rate-sub').value = rate.subRate || 0;
+
+        const subcontractedCheckbox = document.getElementById('rate-subcontracted');
+        if (subcontractedCheckbox) {
+            subcontractedCheckbox.checked = this.isRateSubcontracted(rate);
+        }
+        this.updateSubcontractMode(false);
         
         this.calcModalTotal();
 
@@ -808,6 +886,11 @@ class PricingComponent {
             }
         }
 
+        const subcontracted = this.isModalSubcontracted();
+        rate.subcontracted = subcontracted;
+        if (subcontracted) {
+            rate.category = 'subcontractor';
+        }
         rate.materialRate = parseFloat(document.getElementById('rate-material').value) || 0;
         rate.labourRate = parseFloat(document.getElementById('rate-labour').value) || 0;
         rate.plantRate = parseFloat(document.getElementById('rate-plant').value) || 0;
@@ -892,10 +975,13 @@ class PricingComponent {
             
             if (data && data.success) {
                 const displayUnit = this.displayUnit(rate.unit);
+                const subcontracted = this.isModalSubcontracted();
                 document.getElementById('ai-suggested-val').innerText = `£${data.recommendedRate.toFixed(2)}`;
                 document.getElementById('ai-suggested-range').innerText = `£${data.minPrice.toFixed(2)} - £${data.maxPrice.toFixed(2)} per ${displayUnit}`;
                 document.getElementById('ai-suggested-explain').innerText = data.explanation;
-                document.getElementById('ai-suggested-source').innerText = `${data.source || 'Standard UK Construction Index'} — cost only, excluding OH&P/profit/markup/VAT`;
+                document.getElementById('ai-suggested-source').innerText = subcontracted
+                    ? `${data.source || 'Standard UK Construction Index'} — subcontract package cost to us, including subcontractor OH&P/profit, excluding our markup/VAT`
+                    : `${data.source || 'Standard UK Construction Index'} — direct company cost only, excluding subcontractor profit/OH&P/markup/VAT`;
                 
                 this.modalAISuggestedRate = data.recommendedRate;
 
@@ -928,7 +1014,11 @@ class PricingComponent {
         document.getElementById('rate-plant').value = '0.00';
         document.getElementById('rate-sub').value = '0.00';
 
-        if (rate.category === 'labor' || rate.category === 'labour') {
+        if (this.isModalSubcontracted()) {
+            document.getElementById('rate-sub').value = suggestedCost.toFixed(2);
+            rate.category = 'subcontractor';
+            rate.subcontracted = true;
+        } else if (rate.category === 'labor' || rate.category === 'labour') {
             document.getElementById('rate-labour').value = suggestedCost.toFixed(2);
         } else if (rate.category === 'plant') {
             document.getElementById('rate-plant').value = suggestedCost.toFixed(2);
@@ -1265,6 +1355,7 @@ class PricingComponent {
                 labourRate: est.labourRate || 0,
                 plantRate: est.plantRate || 0,
                 subRate: est.subRate || 0,
+                subcontracted: !!(est.subcontracted || est.isSubcontracted || (Number(est.subRate) > 0 && !Number(est.materialRate) && !Number(est.labourRate) && !Number(est.plantRate))),
                 sourceOrder: Number.isFinite(parsedOrder) ? parsedOrder : index,
                 sorOrderIndex: Number.isFinite(parsedOrder) ? parsedOrder : index
             };
@@ -1575,6 +1666,10 @@ class PricingComponent {
 
         const rate = this.activeRateModal;
         rate.unit = this.normaliseUnit(document.getElementById('rate-unit-select')?.value || rate.unit);
+        rate.subcontracted = this.isModalSubcontracted();
+        if (rate.subcontracted) {
+            rate.category = 'subcontractor';
+        }
         rate.materialRate = parseFloat(document.getElementById('rate-material')?.value) || 0;
         rate.labourRate = parseFloat(document.getElementById('rate-labour')?.value) || 0;
         rate.plantRate = parseFloat(document.getElementById('rate-plant')?.value) || 0;
