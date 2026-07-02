@@ -8,6 +8,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { GoogleGenAI } = require('@google/genai');
 const { scrapePrice } = require('./scraper');
 const { getDbConnection, initDb, hashPassword, seedUserScope } = require('./database');
+const { firestore } = require('./firestore');
 const XLSX = require('xlsx');
 const { parserRegistry } = require('./parsers');
 const { isInformationalOnly, normalizeDescription, extractRoomFromDescription } = require('./utils');
@@ -1020,14 +1021,211 @@ app.put('/api/labour-rates/:trade', requireAuth, async (req, res) => {
   }
 });
 
+
+// --- Firestore Quote Helpers ---
+const LEGACY_FIRESTORE_QUOTES_FALLBACK = process.env.LEGACY_FIRESTORE_QUOTES_FALLBACK !== 'false';
+
+function fsNum(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function fsCleanObject(obj) {
+  const out = {};
+  for (const [key, value] of Object.entries(obj || {})) {
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+function fsParseWarnings(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function fsSerialiseWarnings(value) {
+  return Array.isArray(value) ? JSON.stringify(value) : (value || '[]');
+}
+
+function fsProjectVisibleToUser(project, userId) {
+  if (!project) return false;
+  if (project.user_id === userId || project.userId === userId) return true;
+  // Legacy one-off migration fallback for old SQLite quote history.
+  // This can be disabled with LEGACY_FIRESTORE_QUOTES_FALLBACK=false once old quotes have been claimed.
+  if (LEGACY_FIRESTORE_QUOTES_FALLBACK && String(project.legacySource || '').startsWith('sqlite:server/qs.db:projects')) return true;
+  return false;
+}
+
+function fsProjectToApi(doc) {
+  const data = typeof doc.data === 'function' ? doc.data() : doc;
+  return {
+    ...data,
+    id: data.id || doc.id,
+    user_id: data.user_id || data.userId || '',
+    dateCreated: data.dateCreated || data.createdAt || '',
+    status: data.status || 'Draft',
+    totalCost: fsNum(data.totalCost ?? data.costToCompany),
+    sellPrice: fsNum(data.sellPrice ?? data.totalProposedTenderValue),
+    margin: fsNum(data.margin ?? data.markupPercent)
+  };
+}
+
+function fsItemToApi(doc) {
+  const data = typeof doc.data === 'function' ? doc.data() : doc;
+  return {
+    ...data,
+    id: data.id || doc.id,
+    project_id: data.project_id || data.projectId || data.legacyProjectId || '',
+    section: data.section || 'General',
+    description: data.description || 'Unknown Item',
+    quantity: fsNum(data.quantity || 0),
+    unit: data.unit || 'Item',
+    labourRate: fsNum(data.labourRate || 0),
+    materialRate: fsNum(data.materialRate || 0),
+    plantRate: fsNum(data.plantRate || 0),
+    subRate: fsNum(data.subRate || 0),
+    isAIIdentified: data.isAIIdentified === true || data.isAIIdentified === 1,
+    warnings: fsParseWarnings(data.warnings),
+    sortOrder: fsNum(data.sortOrder ?? data.sourceOrder ?? data.originalIndex ?? data.legacyRowId ?? 0)
+  };
+}
+
+function fsRoomToApi(doc) {
+  const data = typeof doc.data === 'function' ? doc.data() : doc;
+  return {
+    ...data,
+    room: String(data.room || '').toLowerCase().trim(),
+    width: fsNum(data.width || 0),
+    length: fsNum(data.length || 0),
+    height: fsNum(data.height || 0)
+  };
+}
+
+async function fsGetProjectDoc(projectId, userId) {
+  const snap = await firestore.collection('projects').doc(projectId).get();
+  if (!snap.exists) return null;
+  const project = fsProjectToApi(snap);
+  if (!fsProjectVisibleToUser(project, userId)) return null;
+  return { ref: snap.ref, data: project };
+}
+
+async function fsGetProjectItems(projectId) {
+  const snap = await firestore.collection('estimate_items').where('project_id', '==', projectId).get();
+  const items = [];
+  snap.forEach(doc => items.push(fsItemToApi(doc)));
+  items.sort((a, b) => {
+    const ao = fsNum(a.sortOrder ?? a.legacyRowId ?? 0);
+    const bo = fsNum(b.sortOrder ?? b.legacyRowId ?? 0);
+    if (ao !== bo) return ao - bo;
+    return String(a.id).localeCompare(String(b.id));
+  });
+  return items;
+}
+
+async function fsRecalculateProjectCost(projectId) {
+  const snap = await firestore.collection('projects').doc(projectId).get();
+  if (!snap.exists) return null;
+  const project = fsProjectToApi(snap);
+  const items = await fsGetProjectItems(projectId);
+
+  let totalMaterial = 0;
+  let totalLabour = 0;
+  let totalPlant = 0;
+  let totalSub = 0;
+
+  for (const item of items) {
+    const qty = fsNum(item.quantity || 0);
+    totalMaterial += fsNum(item.materialRate || 0) * qty;
+    totalLabour += fsNum(item.labourRate || 0) * qty;
+    totalPlant += fsNum(item.plantRate || 0) * qty;
+    totalSub += fsNum(item.subRate || 0) * qty;
+  }
+
+  const wasteAllowance = fsNum(project.wasteAllowance ?? 10.0);
+  const contingency = fsNum(project.contingency ?? 5.0);
+  const labourUplift = fsNum(project.labourUplift ?? 0.0);
+  const plantOverhead = fsNum(project.plantOverhead ?? 5.0);
+  const margin = fsNum(project.margin ?? project.markupPercent ?? 20.0);
+
+  const materialCost = totalMaterial * (1 + wasteAllowance / 100);
+  const labourCost = totalLabour * (1 + labourUplift / 100);
+  const plantCost = totalPlant * (1 + plantOverhead / 100);
+  const subCost = totalSub;
+
+  const netCost = materialCost + labourCost + plantCost + subCost;
+  const totalCost = netCost * (1 + contingency / 100);
+  const sellPrice = totalCost * (1 + margin / 100);
+  const profit = sellPrice - totalCost;
+  const marginPercent = sellPrice > 0 ? (profit / sellPrice) * 100 : 0;
+
+  const update = {
+    totalCost: parseFloat(totalCost.toFixed(2)),
+    costToCompany: parseFloat(totalCost.toFixed(2)),
+    sellPrice: parseFloat(sellPrice.toFixed(2)),
+    totalProposedTenderValue: parseFloat(sellPrice.toFixed(2)),
+    profit: parseFloat(profit.toFixed(2)),
+    markupPercent: margin,
+    marginPercent: parseFloat(marginPercent.toFixed(2)),
+    updatedAt: new Date().toISOString()
+  };
+
+  await snap.ref.set(update, { merge: true });
+  return { ...project, ...update };
+}
+
+function fsRoomDocId(projectId, room) {
+  return crypto.createHash('sha1').update(`${projectId}|${String(room || '').toLowerCase().trim()}`).digest('hex');
+}
+
+async function fsDeleteQuery(querySnap) {
+  let batch = firestore.batch();
+  let count = 0;
+  for (const doc of querySnap.docs) {
+    batch.delete(doc.ref);
+    count++;
+    if (count >= 450) {
+      await batch.commit();
+      batch = firestore.batch();
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit();
+}
+
 // --- Projects API ---
 app.get('/api/projects', requireAuth, async (req, res) => {
   try {
-    const db = await getDbConnection();
-    const projects = await db.all('SELECT * FROM projects WHERE user_id = ?', req.user.id);
-    await db.close();
+    const byUserSnap = await firestore.collection('projects').where('user_id', '==', req.user.id).get();
+    const projectsById = new Map();
+    byUserSnap.forEach(doc => {
+      const project = fsProjectToApi(doc);
+      if (fsProjectVisibleToUser(project, req.user.id)) projectsById.set(project.id, project);
+    });
+
+    // Include legacy imported quotes if they were migrated before the live app user id was known.
+    if (LEGACY_FIRESTORE_QUOTES_FALLBACK) {
+      const legacySnap = await firestore.collection('projects').where('legacySource', '==', 'sqlite:server/qs.db:projects').get();
+      legacySnap.forEach(doc => {
+        const project = fsProjectToApi(doc);
+        if (fsProjectVisibleToUser(project, req.user.id)) projectsById.set(project.id, project);
+      });
+    }
+
+    const projects = Array.from(projectsById.values()).sort((a, b) => {
+      const ad = String(a.dateCreated || a.createdAt || '');
+      const bd = String(b.dateCreated || b.createdAt || '');
+      return bd.localeCompare(ad);
+    });
+
     res.json(projects);
   } catch (error) {
+    console.error('[Firestore Projects GET Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1035,12 +1233,11 @@ app.get('/api/projects', requireAuth, async (req, res) => {
 app.get('/api/projects/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await getDbConnection();
-    const project = await db.get('SELECT * FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    await db.close();
-    if (!project) return res.status(404).json({ error: 'Project not found' });
-    res.json(project);
+    const found = await fsGetProjectDoc(id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Project not found' });
+    res.json(found.data);
   } catch (error) {
+    console.error('[Firestore Project GET Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1053,24 +1250,37 @@ app.post('/api/projects', requireAuth, async (req, res) => {
   const id = crypto.randomUUID();
   const dateCreated = new Date().toISOString().split('T')[0];
   try {
-    const db = await getDbConnection();
-    await db.run(
-      `INSERT INTO projects (
-        id, user_id, name, client, address, dateCreated, status, totalCost, sellPrice, margin,
-        tenderRef, tradeCategory, startDate, duration, notes,
-        wasteAllowance, contingency, labourUplift, plantOverhead
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, req.user.id, name, client, address, dateCreated, 'Draft', 0, 0, margin || 20,
-        tenderRef || '', tradeCategory || '', startDate || '', duration || '', notes || '',
-        wasteAllowance || 10.0, contingency || 5.0, labourUplift || 0.0, plantOverhead || 5.0
-      ]
-    );
+    const newProject = fsCleanObject({
+      id,
+      user_id: req.user.id,
+      name,
+      client: client || '',
+      address: address || '',
+      dateCreated,
+      createdAt: dateCreated,
+      status: 'Draft',
+      totalCost: 0,
+      costToCompany: 0,
+      sellPrice: 0,
+      totalProposedTenderValue: 0,
+      margin: margin || 20,
+      tenderRef: tenderRef || '',
+      tradeCategory: tradeCategory || '',
+      startDate: startDate || '',
+      duration: duration || '',
+      notes: notes || '',
+      wasteAllowance: wasteAllowance || 10.0,
+      contingency: contingency || 5.0,
+      labourUplift: labourUplift || 0.0,
+      plantOverhead: plantOverhead || 5.0,
+      source: 'firestore-api',
+      updatedAt: new Date().toISOString()
+    });
 
-    const newProject = await db.get('SELECT * FROM projects WHERE id = ?', id);
-    await db.close();
+    await firestore.collection('projects').doc(id).set(newProject, { merge: true });
     res.json(newProject);
   } catch (error) {
+    console.error('[Firestore Project POST Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1087,81 +1297,120 @@ app.post('/api/projects/sync', requireAuth, async (req, res) => {
   }
 
   try {
-    const db = await getDbConnection();
-
-    // 1. Delete existing project and related tables if any (to update completely)
-    await db.run('DELETE FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    await db.run('DELETE FROM estimate_items WHERE project_id = ?', [id]);
-    await db.run('DELETE FROM room_measurements WHERE project_id = ?', [id]);
-
-    // 2. Insert project details
-    await db.run(
-      `INSERT INTO projects (
-        id, user_id, name, client, address, dateCreated, status, totalCost, sellPrice, margin,
-        tenderRef, tradeCategory, startDate, duration, notes,
-        wasteAllowance, contingency, labourUplift, plantOverhead
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, req.user.id, name, client || '', address || '', dateCreated || new Date().toISOString().split('T')[0],
-        status || 'Draft', totalCost || 0, sellPrice || 0, margin || 20.0,
-        tenderRef || '', tradeCategory || '', startDate || '', duration || '', notes || '',
-        wasteAllowance || 10.0, contingency || 5.0, labourUplift || 0.0, plantOverhead || 5.0
-      ]
-    );
-
-    // 3. Insert items
-    const insertItem = await db.prepare(
-      `INSERT INTO estimate_items (
-        id, project_id, section, description, quantity, unit, labourRate, materialRate,
-        plantRate, subRate, isAIIdentified, confidence, warnings, merchant, productUrl, assumptions, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-
-    const orderedImportItems = items.map((item, index) => ({ ...item, sortOrder: Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex ?? index) })).sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder));
-
-    for (const item of orderedImportItems) {
-      await insertItem.run(
-        item.id || crypto.randomUUID(),
-        id,
-        item.section || 'General',
-        item.description || 'Unknown Item',
-        item.quantity || 0,
-        item.unit || 'Item',
-        item.labourRate || 0,
-        item.materialRate || 0,
-        item.plantRate || 0,
-        item.subRate || 0,
-        item.isAIIdentified !== undefined ? item.isAIIdentified : 1,
-        item.confidence || 'Medium',
-        Array.isArray(item.warnings) ? JSON.stringify(item.warnings) : (item.warnings || '[]'),
-        item.merchant || '',
-        item.productUrl || '',
-        item.assumptions || '',
-        item.notes || ''
-      );
+    const projectRef = firestore.collection('projects').doc(id);
+    const existing = await projectRef.get();
+    if (existing.exists && !fsProjectVisibleToUser(fsProjectToApi(existing), req.user.id)) {
+      return res.status(404).json({ error: 'Project not found' });
     }
-    await insertItem.finalize();
 
-    // 3b. Insert room measurements
-    if (roomMeasurements && typeof roomMeasurements === 'object') {
-      const insertRoom = await db.prepare(
-        `INSERT INTO room_measurements (project_id, room, width, length, height) VALUES (?, ?, ?, ?, ?)`
-      );
-      for (const [roomName, dims] of Object.entries(roomMeasurements)) {
-        if (dims && typeof dims === 'object') {
-          await insertRoom.run(id, roomName.toLowerCase().trim(), dims.width || 0, dims.length || 0, dims.height || 0);
-        }
+    const oldItemsSnap = await firestore.collection('estimate_items').where('project_id', '==', id).get();
+    const oldRoomsSnap = await firestore.collection('room_measurements').where('project_id', '==', id).get();
+
+    let batch = firestore.batch();
+    let count = 0;
+    const commitMaybe = async () => {
+      if (count >= 430) {
+        await batch.commit();
+        batch = firestore.batch();
+        count = 0;
       }
-      await insertRoom.finalize();
+    };
+
+    for (const doc of oldItemsSnap.docs) { batch.delete(doc.ref); count++; await commitMaybe(); }
+    for (const doc of oldRoomsSnap.docs) { batch.delete(doc.ref); count++; await commitMaybe(); }
+
+    const projectData = fsCleanObject({
+      id,
+      user_id: req.user.id,
+      name,
+      client: client || '',
+      address: address || '',
+      dateCreated: dateCreated || new Date().toISOString().split('T')[0],
+      createdAt: dateCreated || new Date().toISOString().split('T')[0],
+      status: status || 'Draft',
+      totalCost: fsNum(totalCost || 0),
+      costToCompany: fsNum(totalCost || 0),
+      sellPrice: fsNum(sellPrice || 0),
+      totalProposedTenderValue: fsNum(sellPrice || 0),
+      margin: margin || 20.0,
+      tenderRef: tenderRef || '',
+      tradeCategory: tradeCategory || '',
+      startDate: startDate || '',
+      duration: duration || '',
+      notes: notes || '',
+      wasteAllowance: wasteAllowance || 10.0,
+      contingency: contingency || 5.0,
+      labourUplift: labourUplift || 0.0,
+      plantOverhead: plantOverhead || 5.0,
+      source: 'firestore-api',
+      updatedAt: new Date().toISOString()
+    });
+    batch.set(projectRef, projectData, { merge: true }); count++; await commitMaybe();
+
+    const orderedImportItems = items
+      .map((item, index) => ({ ...item, sortOrder: Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex ?? index) }))
+      .sort((a, b) => Number(a.sortOrder) - Number(b.sortOrder));
+
+    orderedImportItems.forEach((item, index) => {
+      const itemId = item.id || crypto.randomUUID();
+      const materialRate = fsNum(item.materialRate || 0);
+      const labourRate = fsNum(item.labourRate || 0);
+      const plantRate = fsNum(item.plantRate || 0);
+      const subRate = fsNum(item.subRate || 0);
+      const quantity = fsNum(item.quantity || 0);
+      batch.set(firestore.collection('estimate_items').doc(itemId), fsCleanObject({
+        id: itemId,
+        project_id: id,
+        user_id: req.user.id,
+        section: item.section || 'General',
+        description: item.description || 'Unknown Item',
+        quantity,
+        unit: item.unit || 'Item',
+        labourRate,
+        materialRate,
+        plantRate,
+        subRate,
+        isAIIdentified: item.isAIIdentified !== undefined ? !!item.isAIIdentified : true,
+        confidence: item.confidence || 'Medium',
+        warnings: fsSerialiseWarnings(item.warnings),
+        merchant: item.merchant || '',
+        productUrl: item.productUrl || '',
+        assumptions: item.assumptions || '',
+        notes: item.notes || '',
+        sortOrder: Number.isFinite(Number(item.sortOrder)) ? Number(item.sortOrder) : index,
+        baseCostRate: materialRate + labourRate + plantRate + subRate,
+        baseCostTotal: (materialRate + labourRate + plantRate + subRate) * quantity,
+        updatedAt: new Date().toISOString()
+      }), { merge: true });
+      count++;
+    });
+
+    if (roomMeasurements && typeof roomMeasurements === 'object') {
+      Object.entries(roomMeasurements).forEach(([roomName, dims], index) => {
+        if (dims && typeof dims === 'object') {
+          const room = String(roomName || '').toLowerCase().trim();
+          const roomId = fsRoomDocId(id, room);
+          batch.set(firestore.collection('room_measurements').doc(roomId), fsCleanObject({
+            id: roomId,
+            project_id: id,
+            user_id: req.user.id,
+            room,
+            width: fsNum(dims.width || 0),
+            length: fsNum(dims.length || 0),
+            height: fsNum(dims.height || 0),
+            sortOrder: index,
+            updatedAt: new Date().toISOString()
+          }), { merge: true });
+          count++;
+        }
+      });
     }
 
-    // 4. Recalculate
-    await recalculateProjectCost(db, id);
-
-    await db.close();
+    if (count > 0) await batch.commit();
+    await fsRecalculateProjectCost(id);
     res.json({ success: true, projectId: id });
   } catch (error) {
-    console.error('[Sync API Error]:', error);
+    console.error('[Firestore Sync API Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1173,33 +1422,22 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
     duration, notes, wasteAllowance, contingency, labourUplift, plantOverhead
   } = req.body;
   try {
-    const db = await getDbConnection();
+    const found = await fsGetProjectDoc(id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Project not found' });
 
-    // Verify ownership
-    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    if (!project) {
-      await db.close();
-      return res.status(404).json({ error: 'Project not found' });
-    }
+    const update = fsCleanObject({
+      name, client, address, status, margin, tenderRef, tradeCategory,
+      startDate, duration, notes, wasteAllowance, contingency,
+      labourUplift, plantOverhead,
+      user_id: req.user.id,
+      updatedAt: new Date().toISOString()
+    });
 
-    await db.run(
-      `UPDATE projects SET 
-        name=?, client=?, address=?, status=?, margin=?, tenderRef=?, tradeCategory=?,
-        startDate=?, duration=?, notes=?, wasteAllowance=?, contingency=?,
-        labourUplift=?, plantOverhead=?
-       WHERE id=? AND user_id=?`,
-      [
-        name, client, address, status, margin, tenderRef, tradeCategory,
-        startDate, duration, notes, wasteAllowance, contingency,
-        labourUplift, plantOverhead, id, req.user.id
-      ]
-    );
-    // Dynamic recalculation
-    await recalculateProjectCost(db, id);
-    const updatedProject = await db.get('SELECT * FROM projects WHERE id = ?', id);
-    await db.close();
+    await found.ref.set(update, { merge: true });
+    const updatedProject = await fsRecalculateProjectCost(id) || { ...found.data, ...update };
     res.json(updatedProject);
   } catch (error) {
+    console.error('[Firestore Project PUT Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1207,20 +1445,17 @@ app.put('/api/projects/:id', requireAuth, async (req, res) => {
 app.delete('/api/projects/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await getDbConnection();
+    const found = await fsGetProjectDoc(id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Project not found' });
 
-    // Verify ownership
-    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    if (!project) {
-      await db.close();
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    await db.run('DELETE FROM estimate_items WHERE project_id=?', id);
-    await db.run('DELETE FROM projects WHERE id=? AND user_id=?', [id, req.user.id]);
-    await db.close();
+    const itemSnap = await firestore.collection('estimate_items').where('project_id', '==', id).get();
+    const roomSnap = await firestore.collection('room_measurements').where('project_id', '==', id).get();
+    await fsDeleteQuery(itemSnap);
+    await fsDeleteQuery(roomSnap);
+    await found.ref.delete();
     res.json({ success: true });
   } catch (error) {
+    console.error('[Firestore Project DELETE Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1229,16 +1464,16 @@ app.delete('/api/projects/:id', requireAuth, async (req, res) => {
 app.get('/api/projects/:id/room-measurements', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await getDbConnection();
-    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    if (!project) {
-      await db.close();
-      return res.status(404).json({ error: 'Project not found' });
-    }
-    const measurements = await db.all('SELECT room, width, length, height FROM room_measurements WHERE project_id = ?', id);
-    await db.close();
+    const found = await fsGetProjectDoc(id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Project not found' });
+
+    const snap = await firestore.collection('room_measurements').where('project_id', '==', id).get();
+    const measurements = [];
+    snap.forEach(doc => measurements.push(fsRoomToApi(doc)));
+    measurements.sort((a, b) => fsNum(a.sortOrder ?? a.legacyRowId ?? 0) - fsNum(b.sortOrder ?? b.legacyRowId ?? 0));
     res.json(measurements);
   } catch (error) {
+    console.error('[Firestore Room GET Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1246,57 +1481,55 @@ app.get('/api/projects/:id/room-measurements', requireAuth, async (req, res) => 
 app.post('/api/projects/:id/room-measurements', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { room, width, length, height } = req.body;
-  if (!room) {
-    return res.status(400).json({ error: 'Room name is required.' });
-  }
+  if (!room) return res.status(400).json({ error: 'Room name is required.' });
+
   try {
-    const db = await getDbConnection();
-    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    if (!project) {
-      await db.close();
-      return res.status(404).json({ error: 'Project not found' });
-    }
-    await db.run(
-      `INSERT INTO room_measurements (project_id, room, width, length, height)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(project_id, room) DO UPDATE SET
-         width = excluded.width,
-         length = excluded.length,
-         height = excluded.height`,
-      [id, room.toLowerCase().trim(), width || 0, length || 0, height || 0]
-    );
-    await db.close();
+    const found = await fsGetProjectDoc(id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Project not found' });
+
+    const roomClean = String(room).toLowerCase().trim();
+    const roomId = fsRoomDocId(id, roomClean);
+    await firestore.collection('room_measurements').doc(roomId).set(fsCleanObject({
+      id: roomId,
+      project_id: id,
+      user_id: req.user.id,
+      room: roomClean,
+      width: fsNum(width || 0),
+      length: fsNum(length || 0),
+      height: fsNum(height || 0),
+      updatedAt: new Date().toISOString()
+    }), { merge: true });
+
     res.json({ success: true });
   } catch (error) {
+    console.error('[Firestore Room POST Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.get('/api/room-measurements/lookup', requireAuth, async (req, res) => {
   try {
-    const db = await getDbConnection();
-    const rows = await db.all(
-      `SELECT rm.room, rm.width, rm.length, rm.height 
-       FROM room_measurements rm
-       JOIN projects p ON rm.project_id = p.id
-       WHERE p.user_id = ?`,
-      req.user.id
-    );
-    await db.close();
+    const projectsSnap = await firestore.collection('projects').where('user_id', '==', req.user.id).get();
+    const projectIds = new Set();
+    projectsSnap.forEach(doc => projectIds.add(doc.id));
 
-    // De-duplicate room names, keeping the last one (most recent)
+    if (LEGACY_FIRESTORE_QUOTES_FALLBACK) {
+      const legacySnap = await firestore.collection('projects').where('legacySource', '==', 'sqlite:server/qs.db:projects').get();
+      legacySnap.forEach(doc => projectIds.add(doc.id));
+    }
+
     const lookup = {};
-    for (const row of rows) {
-      if (!row.room) continue;
-      const roomClean = row.room.toLowerCase().trim();
-      lookup[roomClean] = {
-        width: row.width,
-        length: row.length,
-        height: row.height
-      };
+    for (const projectId of projectIds) {
+      const snap = await firestore.collection('room_measurements').where('project_id', '==', projectId).get();
+      snap.forEach(doc => {
+        const row = fsRoomToApi(doc);
+        if (!row.room) return;
+        lookup[row.room] = { width: row.width, length: row.length, height: row.height };
+      });
     }
     res.json(lookup);
   } catch (error) {
+    console.error('[Firestore Room Lookup Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1305,34 +1538,12 @@ app.get('/api/room-measurements/lookup', requireAuth, async (req, res) => {
 app.get('/api/projects/:id/estimates', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await getDbConnection();
-
-    // Verify ownership
-    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    if (!project) {
-      await db.close();
-      return res.status(404).json({ error: 'Project not found' });
-    }
-
-    const items = await db.all('SELECT * FROM estimate_items WHERE project_id = ?', id);
-    await db.close();
-
-    // Map warnings JSON string to array, isAIIdentified boolean
-    const mapped = items.map(item => {
-      let parsedWarnings = [];
-      try {
-        parsedWarnings = item.warnings ? JSON.parse(item.warnings) : [];
-      } catch (e) {
-        parsedWarnings = [];
-      }
-      return {
-        ...item,
-        isAIIdentified: item.isAIIdentified === 1,
-        warnings: parsedWarnings
-      };
-    });
-    res.json(mapped);
+    const found = await fsGetProjectDoc(id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Project not found' });
+    const items = await fsGetProjectItems(id);
+    res.json(items);
   } catch (error) {
+    console.error('[Firestore Estimates GET Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1344,32 +1555,42 @@ app.post('/api/estimate-items', requireAuth, async (req, res) => {
   } = req.body;
   const id = crypto.randomUUID();
   try {
-    const db = await getDbConnection();
+    const found = await fsGetProjectDoc(project_id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Project not found' });
 
-    // Verify project ownership
-    const project = await db.get('SELECT id FROM projects WHERE id = ? AND user_id = ?', [project_id, req.user.id]);
-    if (!project) {
-      await db.close();
-      return res.status(404).json({ error: 'Project not found' });
-    }
+    const existingItems = await fsGetProjectItems(project_id);
+    const sortOrder = existingItems.length;
+    const m = fsNum(materialRate || 0), l = fsNum(labourRate || 0), p = fsNum(plantRate || 0), s = fsNum(subRate || 0), q = fsNum(quantity || 1);
+    const newItem = fsCleanObject({
+      id,
+      project_id,
+      user_id: req.user.id,
+      section: section || 'General',
+      description,
+      quantity: q,
+      unit: unit || 'Item',
+      labourRate: l,
+      materialRate: m,
+      plantRate: p,
+      subRate: s,
+      isAIIdentified: !!isAIIdentified,
+      confidence: confidence || 'High',
+      warnings: fsSerialiseWarnings(warnings),
+      merchant: merchant || '',
+      productUrl: productUrl || '',
+      assumptions: assumptions || '',
+      notes: notes || '',
+      sortOrder,
+      baseCostRate: m + l + p + s,
+      baseCostTotal: (m + l + p + s) * q,
+      updatedAt: new Date().toISOString()
+    });
 
-    await db.run(
-      `INSERT INTO estimate_items (
-        id, project_id, section, description, quantity, unit, labourRate, materialRate,
-        plantRate, subRate, isAIIdentified, confidence, warnings, merchant, productUrl, assumptions, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, project_id, section || 'General', description, quantity || 1, unit || 'Item',
-        labourRate || 0, materialRate || 0, plantRate || 0, subRate || 0,
-        isAIIdentified ? 1 : 0, confidence || 'High', JSON.stringify(warnings || []),
-        merchant || '', productUrl || '', assumptions || '', notes || ''
-      ]
-    );
-    await recalculateProjectCost(db, project_id);
-    const newItem = await db.get('SELECT * FROM estimate_items WHERE id = ?', id);
-    await db.close();
-    res.json(newItem);
+    await firestore.collection('estimate_items').doc(id).set(newItem, { merge: true });
+    await fsRecalculateProjectCost(project_id);
+    res.json(fsItemToApi(newItem));
   } catch (error) {
+    console.error('[Firestore Estimate POST Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1381,90 +1602,69 @@ app.put('/api/estimate-items/:id', requireAuth, async (req, res) => {
     subRate, confidence, warnings, merchant, productUrl, assumptions, notes
   } = req.body;
   try {
-    const db = await getDbConnection();
+    const itemRef = firestore.collection('estimate_items').doc(id);
+    const itemSnap = await itemRef.get();
+    if (!itemSnap.exists) return res.status(404).json({ error: 'Estimate item not found' });
 
-    // Verify item belongs to a project owned by this user
-    const oldItem = await db.get(
-      `SELECT e.project_id FROM estimate_items e 
-       JOIN projects p ON e.project_id = p.id 
-       WHERE e.id = ? AND p.user_id = ?`,
-      [id, req.user.id]
-    );
-    if (!oldItem) {
-      await db.close();
-      return res.status(404).json({ error: 'Estimate item not found' });
-    }
+    const oldItem = fsItemToApi(itemSnap);
+    const found = await fsGetProjectDoc(oldItem.project_id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Estimate item not found' });
 
-    await db.run(
-      `UPDATE estimate_items SET 
-        section=?, description=?, quantity=?, unit=?, labourRate=?, materialRate=?,
-        plantRate=?, subRate=?, confidence=?, warnings=?, merchant=?, productUrl=?, assumptions=?, notes=?
-       WHERE id=?`,
-      [
-        section, description, quantity, unit, labourRate, materialRate,
-        plantRate, subRate, confidence, JSON.stringify(warnings || []),
-        merchant, productUrl, assumptions, notes, id
-      ]
-    );
-
-    // Smart pricing: Automatically save manually adjusted/edited price to global rates table
-    const normName = normalizeDescription(description, section);
-    if (normName) {
-      const parsedMat = parseFloat(materialRate) || 0;
-      const parsedLab = parseFloat(labourRate) || 0;
-      const parsedPlant = parseFloat(plantRate) || 0;
-      const parsedSub = parseFloat(subRate) || 0;
-      const totalCostRate = parsedMat + parsedLab + parsedPlant + parsedSub;
-
-      const existingRate = await db.get(
-        'SELECT id FROM rates WHERE user_id = ? AND LOWER(name) = ?',
-        [req.user.id, normName.toLowerCase()]
-      );
-      const dateStr = new Date().toISOString().split('T')[0];
-      if (existingRate) {
-        await db.run(
-          `UPDATE rates SET 
-            costRate = ?,
-            materialRate = ?,
-            labourRate = ?,
-            plantRate = ?,
-            subRate = ?,
-            unit = ?,
-            lastUpdated = ?
-           WHERE id = ?`,
-          [totalCostRate, parsedMat, parsedLab, parsedPlant, parsedSub, unit || 'Item', dateStr, existingRate.id]
-        );
-      } else {
-        await db.run(
-          `INSERT INTO rates (
-            id, user_id, name, trade, unit, costRate, materialRate,
-            labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            crypto.randomUUID(), req.user.id, normName, 'General', unit || 'Item',
-            totalCostRate, parsedMat, parsedLab, parsedPlant, parsedSub,
-            'Material', merchant || 'Manual Adjustment', productUrl || '', dateStr
-          ]
-        );
-      }
-    }
-
-    await recalculateProjectCost(db, oldItem.project_id);
-
-    // Get updated item
-    const updatedItem = await db.get('SELECT * FROM estimate_items WHERE id = ?', id);
-    let parsedWarnings = [];
-    try {
-      parsedWarnings = updatedItem.warnings ? JSON.parse(updatedItem.warnings) : [];
-    } catch (e) { }
-
-    await db.close();
-    res.json({
-      ...updatedItem,
-      isAIIdentified: updatedItem.isAIIdentified === 1,
-      warnings: parsedWarnings
+    const m = fsNum(materialRate || 0), l = fsNum(labourRate || 0), p = fsNum(plantRate || 0), s = fsNum(subRate || 0), q = fsNum(quantity || 0);
+    const update = fsCleanObject({
+      section,
+      description,
+      quantity: q,
+      unit,
+      labourRate: l,
+      materialRate: m,
+      plantRate: p,
+      subRate: s,
+      confidence,
+      warnings: fsSerialiseWarnings(warnings),
+      merchant,
+      productUrl,
+      assumptions,
+      notes,
+      user_id: req.user.id,
+      baseCostRate: m + l + p + s,
+      baseCostTotal: (m + l + p + s) * q,
+      updatedAt: new Date().toISOString()
     });
+
+    await itemRef.set(update, { merge: true });
+
+    // Keep the existing SQLite price library behaviour for manual price learning.
+    try {
+      const db = await getDbConnection();
+      const normName = normalizeDescription(description, section);
+      if (normName) {
+        const totalCostRate = m + l + p + s;
+        const existingRate = await db.get('SELECT id FROM rates WHERE user_id = ? AND LOWER(name) = ?', [req.user.id, normName.toLowerCase()]);
+        const dateStr = new Date().toISOString().split('T')[0];
+        if (existingRate) {
+          await db.run(
+            `UPDATE rates SET costRate = ?, materialRate = ?, labourRate = ?, plantRate = ?, subRate = ?, unit = ?, lastUpdated = ? WHERE id = ?`,
+            [totalCostRate, m, l, p, s, unit || 'Item', dateStr, existingRate.id]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO rates (id, user_id, name, trade, unit, costRate, materialRate, labourRate, plantRate, subRate, category, supplier, sourceUrl, lastUpdated)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [crypto.randomUUID(), req.user.id, normName, 'General', unit || 'Item', totalCostRate, m, l, p, s, 'Material', merchant || 'Manual Adjustment', productUrl || '', dateStr]
+          );
+        }
+      }
+      await db.close();
+    } catch (libraryError) {
+      console.warn('[Firestore Estimate PUT] Price-library SQLite update skipped:', libraryError.message);
+    }
+
+    await fsRecalculateProjectCost(oldItem.project_id);
+    const updatedSnap = await itemRef.get();
+    res.json(fsItemToApi(updatedSnap));
   } catch (error) {
+    console.error('[Firestore Estimate PUT Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1472,25 +1672,19 @@ app.put('/api/estimate-items/:id', requireAuth, async (req, res) => {
 app.delete('/api/estimate-items/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
-    const db = await getDbConnection();
+    const itemRef = firestore.collection('estimate_items').doc(id);
+    const itemSnap = await itemRef.get();
+    if (!itemSnap.exists) return res.status(404).json({ error: 'Estimate item not found' });
 
-    // Verify item belongs to a project owned by this user
-    const item = await db.get(
-      `SELECT e.project_id FROM estimate_items e 
-       JOIN projects p ON e.project_id = p.id 
-       WHERE e.id = ? AND p.user_id = ?`,
-      [id, req.user.id]
-    );
-    if (item) {
-      await db.run('DELETE FROM estimate_items WHERE id=?', id);
-      await recalculateProjectCost(db, item.project_id);
-    } else {
-      await db.close();
-      return res.status(404).json({ error: 'Estimate item not found' });
-    }
-    await db.close();
+    const item = fsItemToApi(itemSnap);
+    const found = await fsGetProjectDoc(item.project_id, req.user.id);
+    if (!found) return res.status(404).json({ error: 'Estimate item not found' });
+
+    await itemRef.delete();
+    await fsRecalculateProjectCost(item.project_id);
     res.json({ success: true });
   } catch (error) {
+    console.error('[Firestore Estimate DELETE Error]:', error);
     res.status(500).json({ error: error.message });
   }
 });
