@@ -14,6 +14,103 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="QS Pro">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <style id="window-door-modal-cleanup">
+        #rate-adjustment-modal .modal-content.card {
+            width: min(1040px, calc(100vw - 32px));
+            max-width: 1040px;
+            max-height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        #rate-adjustment-modal .modal-body {
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+        #rate-adjustment-modal.window-door-mode .modal-body > .grid-2-col {
+            grid-template-columns: minmax(0, 1fr) !important;
+            gap: 16px !important;
+        }
+        #rate-adjustment-modal.window-door-mode .ai-lookup-panel {
+            max-width: none !important;
+            width: 100% !important;
+        }
+        #rate-adjustment-modal.window-door-mode #modal-item-desc {
+            line-height: 1.25;
+            max-height: 110px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        #window-door-configurator {
+            overflow: visible !important;
+        }
+        #wd-groups-list {
+            overflow: visible !important;
+        }
+        .wd-config-row {
+            display: grid !important;
+            grid-template-columns: 34px minmax(110px, 0.9fr) 82px minmax(140px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) 96px !important;
+            gap: 10px !important;
+            align-items: end !important;
+            padding: 12px !important;
+            border: 1px solid var(--border-color) !important;
+            border-radius: 10px !important;
+            background: rgba(255,255,255,0.025) !important;
+            margin-bottom: 10px !important;
+        }
+        .wd-config-row .wd-field label,
+        .wd-config-row .wd-include-label {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 5px;
+        }
+        .wd-config-row .wd-field input,
+        .wd-config-row .wd-field select {
+            width: 100%;
+            min-width: 0;
+            height: 38px !important;
+            padding: 8px 10px !important;
+            font-size: 0.85rem !important;
+        }
+        .wd-config-row .wd-notes-field {
+            grid-column: 2 / 7;
+        }
+        .wd-config-row .wd-remove-btn {
+            height: 38px;
+            align-self: end;
+            padding: 8px 10px !important;
+        }
+        @media (max-width: 860px) {
+            #rate-adjustment-modal .modal-content.card {
+                width: calc(100vw - 16px);
+                max-height: calc(100vh - 16px);
+            }
+            #rate-adjustment-modal .modal-body > .grid-2-col {
+                grid-template-columns: minmax(0, 1fr) !important;
+            }
+            #rate-adjustment-modal .modal-footer {
+                position: sticky;
+                bottom: 0;
+                background: var(--bg-card);
+                z-index: 5;
+            }
+            .wd-config-row {
+                grid-template-columns: 28px 1fr 82px !important;
+                align-items: end !important;
+            }
+            .wd-config-row .wd-wide,
+            .wd-config-row .wd-notes-field {
+                grid-column: 1 / -1 !important;
+            }
+            .wd-config-row .wd-remove-btn {
+                grid-column: 1 / -1;
+                width: 100%;
+            }
+        }
+    </style>
+
 </head>
 <body>
     <div class="app-container">
@@ -1450,7 +1547,7 @@
     <!-- JavaScript Files -->
     <script src="app.js?v=import-order-3"></script>
     <script src="components/takeoff.js"></script>
-    <script src="components/pricing.js?v=window-door-1"></script>
+    <script src="components/pricing.js?v=window-door-2"></script>
     <script src="components/library.js"></script>
     <script src="components/advisor.js"></script>
     <script src="components/proposal.js?v=mobile-pdf-8"></script>

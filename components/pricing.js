@@ -189,51 +189,51 @@ class PricingComponent {
             const div = document.createElement('div');
             div.className = 'wd-config-row';
             div.dataset.wdGroupId = group.id || this.makeWindowDoorGroup(group.kind || 'window').id;
-            div.style.cssText = 'display:grid; grid-template-columns: 28px 110px 80px 130px 130px 130px 1fr 34px; gap:8px; align-items:end; padding:8px; border:1px solid var(--border-color); border-radius:8px; background:rgba(255,255,255,0.025); margin-bottom:8px;';
 
             const kind = group.kind || 'window';
             const materialOptions = ['uPVC', 'Composite', 'Timber', 'Aluminium', 'Steel', 'Other'];
             const glazingOptions = ['None', 'Single glazed', 'Double glazed', 'Triple glazed', 'Part glazed', 'Obscure glazed', 'Laminated / toughened'];
             const styleOptions = ['Casement', 'Sash', 'Fixed', 'Tilt & turn', 'Entrance door', 'French door', 'Patio / sliding door', 'Fire door', 'Other'];
+            const rowId = this.escapeHtml(div.dataset.wdGroupId);
 
             div.innerHTML = `
-                <label title="Include this group" style="display:flex; align-items:center; justify-content:center; padding-bottom:6px;">
+                <label class="wd-include-label" title="Include this group" style="display:flex; align-items:center; justify-content:center; height:38px;">
                     <input type="checkbox" class="wd-enabled" ${group.enabled !== false ? 'checked' : ''} onchange="pricingComponent.updateWindowDoorSummary()">
                 </label>
-                <div>
-                    <label class="text-xs text-secondary block mb-1">Item</label>
-                    <select class="form-select text-xs wd-kind" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                <div class="wd-field">
+                    <label>Item</label>
+                    <select class="form-select wd-kind" onchange="pricingComponent.updateWindowDoorSummary()">
                         <option value="window" ${kind === 'window' ? 'selected' : ''}>Window</option>
                         <option value="door" ${kind === 'door' ? 'selected' : ''}>Door</option>
                     </select>
                 </div>
-                <div>
-                    <label class="text-xs text-secondary block mb-1">Qty</label>
-                    <input type="number" class="form-input text-xs wd-qty" value="${Number(group.qty) || 0}" min="0" step="1" style="height:32px; padding:5px 8px;" oninput="pricingComponent.updateWindowDoorSummary()">
+                <div class="wd-field">
+                    <label>Qty</label>
+                    <input type="number" class="form-input wd-qty" value="${Number(group.qty) || 0}" min="0" step="1" oninput="pricingComponent.updateWindowDoorSummary()">
                 </div>
-                <div>
-                    <label class="text-xs text-secondary block mb-1">Material / Type</label>
-                    <select class="form-select text-xs wd-material" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                <div class="wd-field wd-wide">
+                    <label>Material / Type</label>
+                    <select class="form-select wd-material" onchange="pricingComponent.updateWindowDoorSummary()">
                         ${materialOptions.map(opt => `<option value="${this.escapeHtml(opt)}" ${String(group.material || '') === opt ? 'selected' : ''}>${this.escapeHtml(opt)}</option>`).join('')}
                     </select>
                 </div>
-                <div>
-                    <label class="text-xs text-secondary block mb-1">Glazing</label>
-                    <select class="form-select text-xs wd-glazing" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                <div class="wd-field wd-wide">
+                    <label>Glazing</label>
+                    <select class="form-select wd-glazing" onchange="pricingComponent.updateWindowDoorSummary()">
                         ${glazingOptions.map(opt => `<option value="${this.escapeHtml(opt)}" ${String(group.glazing || '') === opt ? 'selected' : ''}>${this.escapeHtml(opt)}</option>`).join('')}
                     </select>
                 </div>
-                <div>
-                    <label class="text-xs text-secondary block mb-1">Style</label>
-                    <select class="form-select text-xs wd-style" style="height:32px; padding:5px 8px;" onchange="pricingComponent.updateWindowDoorSummary()">
+                <div class="wd-field wd-wide">
+                    <label>Style</label>
+                    <select class="form-select wd-style" onchange="pricingComponent.updateWindowDoorSummary()">
                         ${styleOptions.map(opt => `<option value="${this.escapeHtml(opt)}" ${String(group.style || '') === opt ? 'selected' : ''}>${this.escapeHtml(opt)}</option>`).join('')}
                     </select>
                 </div>
-                <div>
-                    <label class="text-xs text-secondary block mb-1">Notes / sizes</label>
-                    <input type="text" class="form-input text-xs wd-notes" value="${this.escapeHtml(group.notes || '')}" placeholder="e.g. multi-chamber profiles, trickle vents" style="height:32px; padding:5px 8px;" oninput="pricingComponent.updateWindowDoorSummary()">
+                <button type="button" class="btn btn-secondary text-xs wd-remove-btn" onclick="pricingComponent.removeWindowDoorGroup('${rowId}')">Remove</button>
+                <div class="wd-field wd-notes-field">
+                    <label>Notes / sizes</label>
+                    <input type="text" class="form-input wd-notes" value="${this.escapeHtml(group.notes || '')}" placeholder="e.g. 1200 x 900, trickle vents, obscure glass" oninput="pricingComponent.updateWindowDoorSummary()">
                 </div>
-                <button type="button" class="btn btn-secondary text-xs" style="height:32px; padding:5px 8px;" onclick="pricingComponent.removeWindowDoorGroup('${this.escapeHtml(div.dataset.wdGroupId)}')">×</button>
             `;
             list.appendChild(div);
         });
@@ -245,12 +245,15 @@ class PricingComponent {
         const container = document.getElementById('window-door-configurator');
         if (!container) return;
 
+        const modal = document.getElementById('rate-adjustment-modal');
         if (!this.isWindowDoorItem(rate)) {
             container.style.display = 'none';
+            if (modal) modal.classList.remove('window-door-mode');
             return;
         }
 
         container.style.display = 'block';
+        if (modal) modal.classList.add('window-door-mode');
         const spec = this.getSavedWindowDoorSpec(rate) || this.getDefaultWindowDoorSpec(rate);
         const useQty = document.getElementById('wd-use-qty');
         if (useQty) useQty.checked = spec.useQuantity !== false;
@@ -763,7 +766,11 @@ class PricingComponent {
     }
 
     closeAdjustModal() {
-        document.getElementById('rate-adjustment-modal').style.display = 'none';
+        const modal = document.getElementById('rate-adjustment-modal');
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('window-door-mode');
+        }
         this.activeRateModal = null;
     }
 
