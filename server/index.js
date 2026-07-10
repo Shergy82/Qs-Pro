@@ -103,7 +103,7 @@ function localHeuristicExcelParser(filePath) {
         nameLower.includes('total') ||
         nameLower.includes('index') ||
         nameLower.includes('instruction') ||
-        nameLower.includes('prelim')) {
+        (nameLower.includes('prelim') && !nameLower.includes('bill'))) {
         return;
       }
 
@@ -115,7 +115,7 @@ function localHeuristicExcelParser(filePath) {
       // Checklist / Scoping sheet detection
       let statusColIdx = -1;
       const colVotes = [];
-      for (let c = 0; c < 25; c++) colVotes[c] = { yes: 0, no: 0 };
+      for (let c = 0; c < 25; c++) colVotes[c] = { yes: 0, no: 0, textVotes: 0 };
 
       for (let r = 0; r < rows.length; r++) {
         const row = rows[r];
@@ -123,13 +123,23 @@ function localHeuristicExcelParser(filePath) {
         row.forEach((cell, idx) => {
           if (cell === null || cell === undefined || idx >= 25) return;
           const str = String(cell).trim().toLowerCase();
-          if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[idx].yes++;
-          if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[idx].no++;
+          if (str === 'yes' || str === 'y' || str === 'true') {
+            colVotes[idx].yes++;
+            colVotes[idx].textVotes++;
+          } else if (str === '1') {
+            colVotes[idx].yes++;
+          }
+          if (str === 'no' || str === 'n' || str === 'false') {
+            colVotes[idx].no++;
+            colVotes[idx].textVotes++;
+          } else if (str === '0') {
+            colVotes[idx].no++;
+          }
         });
       }
 
       for (let idx = 0; idx < colVotes.length; idx++) {
-        if (colVotes[idx].yes + colVotes[idx].no >= 2) {
+        if (colVotes[idx].yes + colVotes[idx].no >= 2 && colVotes[idx].textVotes >= 1) {
           statusColIdx = idx;
           break;
         }
@@ -209,11 +219,11 @@ function localHeuristicExcelParser(filePath) {
       }
 
       // Default column mapping indices
-      let itemIdx = 0;
-      let descIdx = 1;
-      let unitIdx = 2;
-      let qtyIdx = 3;
-      let rateIdx = 4;
+      let itemIdx = -1;
+      let descIdx = -1;
+      let unitIdx = -1;
+      let qtyIdx = -1;
+      let rateIdx = -1;
 
       // Dynamic header mapping
       let headerRowIdx = -1;
@@ -226,19 +236,28 @@ function localHeuristicExcelParser(filePath) {
           if (!cell) return;
           const str = String(cell).toLowerCase().trim();
           if (str === 'item' || str === 'ref' || str === 'code') itemIdx = idx;
-          if (str.includes('description') || str.includes('work') || str === 'details') {
+          if (str.includes('description') || str === 'details') {
+            descIdx = idx;
+            foundDesc = true;
+          } else if (str.includes('work') && !foundDesc && !str.includes('total') && !str.includes('element') && !str.includes('amount')) {
             descIdx = idx;
             foundDesc = true;
           }
           if (str === 'unit') unitIdx = idx;
           if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
-          if (str === 'rate' || str.includes('unit cost')) rateIdx = idx;
+          if (str.includes('rate') || str.includes('unit cost') || str.includes('price per unit') || str.includes('unit price')) rateIdx = idx;
         });
         if (foundDesc) {
           headerRowIdx = r;
           break;
         }
       }
+
+      // Assign robust fallback defaults if not found
+      if (descIdx === -1) descIdx = 1;
+      if (unitIdx === -1) unitIdx = [2, 1, 3, 4].find(i => i !== descIdx && i !== itemIdx) || 2;
+      if (qtyIdx === -1) qtyIdx = [3, 2, 4, 1].find(i => i !== descIdx && i !== itemIdx && i !== unitIdx) || 3;
+      if (rateIdx === -1) rateIdx = [4, 3, 2, 1].find(i => i !== descIdx && i !== itemIdx && i !== unitIdx && i !== qtyIdx) || 4;
 
       const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
       for (let r = startRowIdx; r < rows.length; r++) {
@@ -265,7 +284,7 @@ function localHeuristicExcelParser(filePath) {
         const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
         const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
         const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
-        const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
+        const hasItemCode = itemIdx !== -1 && itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
         const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
 
         if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
@@ -287,7 +306,7 @@ function localHeuristicExcelParser(filePath) {
         }
 
         // Check if it's a sub-heading section
-        const itemCell = row[itemIdx];
+        const itemCell = itemIdx !== -1 ? row[itemIdx] : null;
         const itemCode = itemCell ? String(itemCell).trim() : '';
         if (!itemCode && description.length < 50 && !row[qtyIdx] && !row[unitIdx]) {
           currentSection = description;
@@ -2842,7 +2861,7 @@ function largeFindChecklistColumns(rows) {
   }
 
   if (descColIdx === -1) {
-    const colVotes = Array.from({ length: 30 }, () => ({ yes: 0, no: 0 }));
+    const colVotes = Array.from({ length: 30 }, () => ({ yes: 0, no: 0, textVotes: 0 }));
 
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
@@ -2850,13 +2869,23 @@ function largeFindChecklistColumns(rows) {
 
       for (let c = 0; c < Math.min(row.length, 30); c++) {
         const str = largeCellText(row[c]).toLowerCase();
-        if (str === 'yes' || str === 'y' || str === 'true' || str === '1') colVotes[c].yes++;
-        if (str === 'no' || str === 'n' || str === 'false' || str === '0') colVotes[c].no++;
+        if (str === 'yes' || str === 'y' || str === 'true') {
+          colVotes[c].yes++;
+          colVotes[c].textVotes++;
+        } else if (str === '1') {
+          colVotes[c].yes++;
+        }
+        if (str === 'no' || str === 'n' || str === 'false') {
+          colVotes[c].no++;
+          colVotes[c].textVotes++;
+        } else if (str === '0') {
+          colVotes[c].no++;
+        }
       }
     }
 
     for (let c = 0; c < colVotes.length; c++) {
-      if (colVotes[c].yes + colVotes[c].no >= 2) {
+      if (colVotes[c].yes + colVotes[c].no >= 2 && colVotes[c].textVotes >= 1) {
         statusColIdx = c;
         roomColIdx = 0;
         typeColIdx = Math.max(0, c - 1);
@@ -2960,7 +2989,7 @@ function pushLargeParsedItem(items, rawSection, rawDescription, rawQuantity, raw
   if (descLower.includes('grand total')) return;
   if (descLower.includes('subtotal')) return;
 
-  if (typeof isInformationalOnly === 'function' && isInformationalOnly(descLower)) {
+  if (!options.allowInformationalItems && typeof isInformationalOnly === 'function' && isInformationalOnly(descLower)) {
     return;
   }
 
@@ -2990,6 +3019,10 @@ function pushLargeParsedItem(items, rawSection, rawDescription, rawQuantity, raw
     description: roomResult.description || description,
     quantity,
     unit,
+    labourRate: largeNumberFromCell(options.labourRate) || 0,
+    materialRate: largeNumberFromCell(options.materialRate) || 0,
+    plantRate: largeNumberFromCell(options.plantRate) || 0,
+    subRate: largeNumberFromCell(options.subRate) || 0,
     status: selected ? 'Yes' : 'No',
     selected: !!selected,
     sourceOrder,
@@ -3075,10 +3108,12 @@ function parseLargeExcelWorkbook(filePath, originalName) {
       return;
     }
 
-    let itemIdx = 0;
+    let itemIdx = -1;
     let descIdx = -1;
     let unitIdx = -1;
     let qtyIdx = -1;
+    let rateIdx = -1;
+    let amountIdx = -1;
     let headerRowIdx = -1;
 
     for (let r = 0; r < Math.min(rows.length, 40); r++) {
@@ -3089,12 +3124,17 @@ function parseLargeExcelWorkbook(filePath, originalName) {
         const str = largeCellText(row[c]).toLowerCase();
 
         if (str === 'item' || str === 'ref' || str === 'code') itemIdx = c;
-        if (str.includes('description') || str.includes('work') || str === 'details') {
+        if (str.includes('description') || str === 'details') {
+          descIdx = c;
+          headerRowIdx = r;
+        } else if (str.includes('work') && descIdx === -1 && !str.includes('total') && !str.includes('element') && !str.includes('amount')) {
           descIdx = c;
           headerRowIdx = r;
         }
         if (str === 'unit' || str === 'uom') unitIdx = c;
         if (str === 'qty' || str.includes('quantity')) qtyIdx = c;
+        if (str.includes('rate') || str.includes('unit cost') || str.includes('price per unit') || str.includes('unit price')) rateIdx = c;
+        if (str === 'amount' || str === 'total') amountIdx = c;
       }
 
       if (descIdx !== -1) break;
@@ -3132,20 +3172,31 @@ function parseLargeExcelWorkbook(filePath, originalName) {
       const description = largeCellText(row[descIdx]);
       if (!description || description.length < 5) continue;
 
-      const itemCode = largeCellText(row[itemIdx]);
+      const itemCode = itemIdx !== -1 ? largeCellText(row[itemIdx]) : '';
       const unit = unitIdx !== -1 ? largeCellText(row[unitIdx]) : '';
       const quantity = qtyIdx !== -1 ? row[qtyIdx] : '';
+      const rate = rateIdx !== -1 ? row[rateIdx] : '';
+      const amount = amountIdx !== -1 ? row[amountIdx] : '';
 
       const hasQty = largeNumberFromCell(quantity) !== null;
       const hasUnit = !!unit;
+      const hasRate = largeNumberFromCell(rate) !== null;
+      const hasAmount = largeNumberFromCell(amount) !== null;
       const hasItemCode = !!itemCode;
       const hasInlineQty = /(\d+(?:\.\d+)?)\s*(no\.?|nr|m2|m²|m3|m³|lm|m\b|item|sum)/i.test(description);
 
-      if (!hasQty && !hasUnit && !hasItemCode && !hasInlineQty && description.length < 40) {
+      if (!hasQty && !hasUnit && !hasRate && !hasAmount && !hasItemCode && !hasInlineQty && description.length < 40) {
         continue;
       }
 
-      pushLargeParsedItem(items, currentSection, description, quantity, unit, true);
+      pushLargeParsedItem(items, currentSection, description, quantity, unit, true, {
+        category: itemCode,
+        materialRate: rate,
+        sourceOrder: r + (workbook.SheetNames.indexOf(sheetName) * 100000),
+        sourceSheet: sheetName,
+        sourceRow: r + 1,
+        allowInformationalItems: hasItemCode
+      });
     }
   });
 
@@ -3301,9 +3352,102 @@ function largeWorkbookHasStructuredFurtherInfoSheet(filePath) {
   return false;
 }
 
+function largeWorkbookLooksLikeBoq(filePath) {
+  try {
+    const workbook = XLSX.readFile(filePath, {
+      sheetRows: 250,
+      cellDates: false,
+      cellNF: false,
+      cellStyles: false
+    });
+
+    let billSheetCount = 0;
+    let codedItemCount = 0;
+
+    for (const sheetName of workbook.SheetNames) {
+      const lowerSheet = String(sheetName || '').toLowerCase();
+      if (lowerSheet.includes('collection') || lowerSheet.includes('summary') || lowerSheet.includes('total')) {
+        continue;
+      }
+
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: false,
+        defval: ''
+      });
+
+      let headerRowIdx = -1;
+      let itemIdx = -1;
+      let descIdx = -1;
+      let unitIdx = -1;
+      let qtyIdx = -1;
+      let rateIdx = -1;
+      let amountIdx = -1;
+
+      for (let r = 0; r < Math.min(rows.length, 60); r++) {
+        const row = rows[r];
+        if (!Array.isArray(row)) continue;
+
+        const headers = row.map(largeNormaliseHeader);
+        const possibleItemIdx = headers.findIndex(h => h === 'item' || h === 'ref' || h === 'code');
+        const possibleDescIdx = headers.findIndex(h => h.includes('description') || h.includes('work') || h === 'details');
+        const possibleUnitIdx = headers.findIndex(h => h === 'unit' || h === 'uom');
+        const possibleQtyIdx = headers.findIndex(h => h === 'qty' || h.includes('quantity'));
+        const possibleRateIdx = headers.findIndex(h => h === 'rate' || h.includes('unit cost'));
+        const possibleAmountIdx = headers.findIndex(h => h === 'amount' || h === 'total');
+
+        if (possibleDescIdx !== -1 && (possibleItemIdx !== -1 || possibleUnitIdx !== -1 || possibleQtyIdx !== -1 || possibleRateIdx !== -1 || possibleAmountIdx !== -1)) {
+          headerRowIdx = r;
+          itemIdx = possibleItemIdx !== -1 ? possibleItemIdx : 0;
+          descIdx = possibleDescIdx;
+          unitIdx = possibleUnitIdx;
+          qtyIdx = possibleQtyIdx;
+          rateIdx = possibleRateIdx;
+          amountIdx = possibleAmountIdx;
+          break;
+        }
+      }
+
+      if (headerRowIdx === -1 || descIdx === -1) continue;
+
+      let sheetItemCount = 0;
+      for (let r = headerRowIdx + 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!Array.isArray(row)) continue;
+
+        const itemCode = itemIdx !== -1 ? largeCellText(row[itemIdx]) : '';
+        const description = largeCellText(row[descIdx]);
+        const unit = unitIdx !== -1 ? largeCellText(row[unitIdx]) : '';
+        const qty = qtyIdx !== -1 ? row[qtyIdx] : '';
+        const rate = rateIdx !== -1 ? row[rateIdx] : '';
+        const amount = amountIdx !== -1 ? row[amountIdx] : '';
+
+        const hasCodedItem = /^[A-Z]?\d+(?:\.\d+)*[A-Z]?$/i.test(itemCode);
+        const hasCommercialColumns = !!unit || largeNumberFromCell(qty) !== null || largeNumberFromCell(rate) !== null || largeNumberFromCell(amount) !== null;
+
+        if (description.length >= 12 && (hasCodedItem || hasCommercialColumns)) {
+          sheetItemCount++;
+        }
+      }
+
+      if (sheetItemCount >= 2 || (lowerSheet.includes('bill') && sheetItemCount >= 1)) {
+        billSheetCount++;
+        codedItemCount += sheetItemCount;
+      }
+    }
+
+    return billSheetCount >= 1 && codedItemCount >= 2;
+  } catch (err) {
+    console.warn('[BOQ Parser] Detection failed:', err.message);
+    return false;
+  }
+}
+
 // --- Document Analysis API ---
 app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req, res) => {
-  if (!ai) return res.status(500).json({ error: 'Gemini API key is not configured.' });
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
 
   try {
@@ -3317,11 +3461,11 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
       req.file.originalname.toLowerCase().endsWith('.xls') ||
       req.file.originalname.toLowerCase().endsWith('.csv');
 
-    // Structured SOR/specification workbooks must be parsed deterministically.
-    // Do this before the AI/strategy registry so the app does not import blank
-    // Yes/No rows, property notes, compliance sheets, or type-only rows.
-    if (isExcelUpload && largeWorkbookHasStructuredFurtherInfoSheet(req.file.path)) {
-      console.log('[Document Analyzer] Structured Further Information workbook detected. Using deterministic SOR parser.');
+    // Structured SOR/specification/BOQ workbooks must be parsed deterministically.
+    // Do this before the AI/strategy registry so Excel BOQs still import when Gemini
+    // is unavailable, rate limited, or not suited to this workbook layout.
+    if (isExcelUpload && (largeWorkbookHasStructuredFurtherInfoSheet(req.file.path) || largeWorkbookLooksLikeBoq(req.file.path))) {
+      console.log('[Document Analyzer] Structured Excel workbook detected. Using deterministic SOR/BOQ parser.');
       const extractedItems = parseLargeExcelWorkbook(req.file.path, req.file.originalname)
         .map((item, index) => ({
           ...item,
@@ -3335,6 +3479,10 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
 
       try { fs.unlinkSync(req.file.path); } catch (e) {}
       return res.json({ success: true, filename: req.file.originalname, items: extractedItems });
+    }
+
+    if (!isExcelUpload && !ai) {
+      return res.status(500).json({ error: 'Gemini API key is not configured.' });
     }
 
     let selectedStrategy = null;
@@ -3396,7 +3544,7 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
         originalTotalRows += rows.length;
 
-        let itemIdx = 0, descIdx = 1, unitIdx = 2, qtyIdx = 3, rateIdx = 4;
+        let itemIdx = -1, descIdx = -1, unitIdx = -1, qtyIdx = -1, rateIdx = -1;
         let headerRowIdx = -1;
 
         const checklistColumns = largeFindChecklistColumns(rows);
@@ -3460,19 +3608,28 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
               if (!cell) return;
               const str = String(cell).toLowerCase().trim();
               if (str === 'item' || str === 'ref' || str === 'code') itemIdx = idx;
-              if (str.includes('description') || str.includes('work') || str === 'details') {
+              if (str.includes('description') || str === 'details') {
+                descIdx = idx;
+                foundDesc = true;
+              } else if (str.includes('work') && !foundDesc && !str.includes('total') && !str.includes('element') && !str.includes('amount')) {
                 descIdx = idx;
                 foundDesc = true;
               }
               if (str === 'unit') unitIdx = idx;
               if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
-              if (str === 'rate' || str.includes('unit cost')) rateIdx = idx;
+              if (str.includes('rate') || str.includes('unit cost') || str.includes('price per unit') || str.includes('unit price')) rateIdx = idx;
             });
             if (foundDesc) {
               headerRowIdx = r;
               break;
             }
           }
+
+          // Assign robust defaults if not found
+          if (descIdx === -1) descIdx = 1;
+          if (unitIdx === -1) unitIdx = [2, 1, 3, 4].find(i => i !== descIdx && i !== itemIdx) || 2;
+          if (qtyIdx === -1) qtyIdx = [3, 2, 4, 1].find(i => i !== descIdx && i !== itemIdx && i !== unitIdx) || 3;
+          if (rateIdx === -1) rateIdx = [4, 3, 2, 1].find(i => i !== descIdx && i !== itemIdx && i !== unitIdx && i !== qtyIdx) || 4;
 
           const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
           if (headerRowIdx !== -1) {
@@ -3501,14 +3658,14 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
             const hasQty = row[qtyIdx] !== undefined && row[qtyIdx] !== null && String(row[qtyIdx]).trim() !== '';
             const hasUnit = row[unitIdx] !== undefined && row[unitIdx] !== null && String(row[unitIdx]).trim() !== '';
             const hasRate = row[rateIdx] !== undefined && row[rateIdx] !== null && String(row[rateIdx]).trim() !== '';
-            const hasItemCode = itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
+            const hasItemCode = itemIdx !== -1 && itemIdx !== undefined && row[itemIdx] !== undefined && row[itemIdx] !== null && String(row[itemIdx]).trim() !== '';
             const hasInlineQty = /(\d+)\s*(no\.?|m2|m3|m\b)/i.test(description);
 
             if (!hasQty && !hasUnit && !hasRate && !hasItemCode && !hasInlineQty) {
               continue;
             }
 
-            const itemCell = row[itemIdx];
+            const itemCell = itemIdx !== -1 ? row[itemIdx] : null;
             const itemCode = itemCell ? String(itemCell).trim() : '';
             if (!itemCode && description.length < 50 && !row[qtyIdx] && !row[unitIdx]) {
               continue;
@@ -3533,8 +3690,34 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
 
       console.log(`Excel pre-filtered. Original rows: ${originalTotalRows}, Cleaned rows (with data): ${cleanedTotalRows}, String size: ${excelText.length} characters.`);
       if (excelText.trim().length > 0) {
-        console.log('Sending pre-filtered Excel contents to Gemini...');
-        try {
+        if (!ai) {
+          console.log('[Analyze Document] Gemini API key is not configured. Using local Excel parser fallback.');
+          const fallbackItems = localHeuristicExcelParser(req.file.path);
+          fallbackItems.forEach(item => {
+            const roomResult = extractRoomFromDescription(item.description || '', item.section || 'General');
+            const isAlreadyAdded = extractedItems.some(i => i.section === roomResult.room && i.description === roomResult.description);
+            if (!isAlreadyAdded) {
+              extractedItems.push({
+                section: roomResult.room,
+                category: item.category || '',
+                description: roomResult.description,
+                quantity: item.quantity || 1,
+                unit: item.unit || 'Item',
+                labourRate: item.labourRate || 0,
+                materialRate: item.materialRate || 0,
+                plantRate: item.plantRate || 0,
+                subRate: item.subRate || 0,
+                sourceOrder: item.sourceOrder,
+                sortOrder: item.sortOrder,
+                status: 'Yes',
+                selected: true
+              });
+            }
+          });
+          try { fs.unlinkSync(req.file.path); } catch (e) { }
+        } else {
+          console.log('Sending pre-filtered Excel contents to Gemini...');
+          try {
           const response = await generateContentWithRetry({
             model: 'gemini-2.5-flash',
             contents: [
@@ -3624,6 +3807,7 @@ ${excelText}`
             }
           });
           try { fs.unlinkSync(req.file.path); } catch (e) { }
+          }
         }
       } else {
         // All sheets were checklists and parsed locally! Just delete the uploaded file
@@ -3729,6 +3913,8 @@ app.listen(PORT, () => {
 
 module.exports = {
   localHeuristicExcelParser,
+  parseLargeExcelWorkbook,
+  largeWorkbookLooksLikeBoq,
   localKeywordPricing,
   localQSChatFallback,
   extractRoomFromDescription

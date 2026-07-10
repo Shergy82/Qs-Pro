@@ -286,6 +286,138 @@ Structure for each object:
   }
 });
 
+// 3. Hanley Park Main Pavillion Excel Strategy
+registerParser('hanley_park_excel', {
+  name: 'Hanley Park Main Pavillion Schedule',
+  description: 'Parses the Hanley Park Main Pavillion Schedule of Works Excel sheet.',
+  detect: (file, workbook) => {
+    if (!workbook) return false;
+    const nameLower = file.originalname.toLowerCase();
+    const hasSchedule = workbook.SheetNames.includes('4. Schedule');
+    return hasSchedule || nameLower.includes('hanley') || nameLower.includes('pavillion');
+  },
+  parse: async (filePath, mimetype, originalName) => {
+    console.log(`[Hanley Park Parser] Reading file ${originalName}...`);
+    const workbook = XLSX.readFile(filePath);
+    let targetSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes('schedule') || name.toLowerCase().includes('pavillion'));
+    if (!targetSheetName) {
+      targetSheetName = workbook.SheetNames[0];
+    }
+    
+    console.log(`[Hanley Park Parser] Using sheet: ${targetSheetName}`);
+    const sheet = workbook.Sheets[targetSheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    let currentSection = 'General';
+    const items = [];
+
+    let headerRowIdx = -1;
+    let descIdx = -1;
+    let unitIdx = -1;
+    let qtyIdx = -1;
+    let rateIdx = -1;
+
+    for (let r = 0; r < Math.min(rows.length, 25); r++) {
+      const row = rows[r];
+      if (!row || !Array.isArray(row)) continue;
+      let foundDesc = false;
+      row.forEach((cell, idx) => {
+        if (!cell) return;
+        const str = String(cell).toLowerCase().trim();
+        if (str.includes('description') || str === 'details') {
+          descIdx = idx;
+          foundDesc = true;
+        } else if (str.includes('work') && !foundDesc && !str.includes('total') && !str.includes('element') && !str.includes('amount')) {
+          descIdx = idx;
+          foundDesc = true;
+        }
+        if (str === 'unit') unitIdx = idx;
+        if (str === 'qty' || str.includes('quantity')) qtyIdx = idx;
+        if (str.includes('rate') || str.includes('unit cost')) rateIdx = idx;
+      });
+      if (foundDesc && (unitIdx !== -1 || qtyIdx !== -1)) {
+        headerRowIdx = r;
+        break;
+      }
+    }
+
+    // Assign fallback defaults if not found
+    if (descIdx === -1) descIdx = 1;
+    if (unitIdx === -1) unitIdx = 2;
+    if (qtyIdx === -1) qtyIdx = 3;
+    if (rateIdx === -1) rateIdx = 4;
+
+    const startRowIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+    
+    for (let r = startRowIdx; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row || row.length === 0) continue;
+
+      const descCell = row[descIdx];
+      const description = descCell ? String(descCell).trim() : '';
+      if (!description) continue;
+
+      const unitCell = row[unitIdx];
+      const qtyCell = row[qtyIdx];
+      const rateCell = row[rateIdx];
+
+      const hasUnit = unitCell !== undefined && unitCell !== null && String(unitCell).trim() !== '';
+      const hasQty = qtyCell !== undefined && qtyCell !== null && String(qtyCell).trim() !== '';
+      const hasRate = rateCell !== undefined && rateCell !== null && String(rateCell).trim() !== '';
+
+      if (!hasUnit && !hasQty && !hasRate) {
+        // Skip links, headers and metadata
+        if (description.toLowerCase().includes('link to index') || 
+            description.toLowerCase().includes('external redecoration') ||
+            description.toLowerCase().includes('total') ||
+            description.toLowerCase().includes('carried to') ||
+            description.length > 100) {
+          continue;
+        }
+        currentSection = description;
+        continue;
+      }
+
+      let quantity = 1;
+      if (qtyCell !== undefined && qtyCell !== null && String(qtyCell).trim() !== '') {
+        const qNum = Number(String(qtyCell).replace(/[^0-9.-]/g, ''));
+        if (!isNaN(qNum) && qNum > 0) {
+          quantity = qNum;
+        }
+      }
+
+      let rate = 0;
+      if (rateCell !== undefined && rateCell !== null && String(rateCell).trim() !== '') {
+        const rNum = Number(String(rateCell).replace(/[^0-9.-]/g, ''));
+        if (!isNaN(rNum) && rNum > 0) {
+          rate = rNum;
+        }
+      }
+
+      const unit = unitCell ? String(unitCell).trim() : 'Item';
+
+      const roomResult = extractRoomFromDescription(description, currentSection);
+
+      items.push({
+        section: roomResult.room,
+        category: '',
+        description: roomResult.description,
+        quantity: quantity,
+        unit: unit,
+        labourRate: 0,
+        materialRate: rate,
+        plantRate: 0,
+        subRate: 0,
+        status: 'Yes',
+        selected: true
+      });
+    }
+
+    console.log(`[Hanley Park Parser] Extracted ${items.length} items.`);
+    return items;
+  }
+});
+
 module.exports = {
   parserRegistry,
   registerParser
