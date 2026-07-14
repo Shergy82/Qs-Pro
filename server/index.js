@@ -2027,7 +2027,7 @@ app.post('/api/scrape', requireAuth, async (req, res) => {
 
 // --- AI Price Suggest API ---
 app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
-  const { description, unit, quantity, category } = req.body || {};
+  const { description, unit, quantity, category, originalDescription } = req.body || {};
 
   if (!description || !unit) {
     return res.status(400).json({
@@ -2037,8 +2037,9 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
   }
 
   const descText = String(description || '').trim();
+  const originalDescText = String(originalDescription || description || '').trim();
   const unitText = String(unit || '').trim();
-  const normDesc = normalizeDescription(descText, '');
+  const normDesc = normalizeDescription(originalDescText, '');
   const normUnit = unitText.toLowerCase().trim();
   const qty = Math.max(Number(quantity) || 1, 1);
   const categoryText = String(category || '').trim();
@@ -2063,7 +2064,7 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
   }
 
   function detectQuantityFromDescription() {
-    const text = descText.toLowerCase();
+    const text = originalDescText.toLowerCase();
 
     const areaMatch = text.match(/(?:allowance\s*for\s*)?(\d+(?:\.\d+)?)\s*(?:m2|mï¿½|sqm|sq\s*m)/i);
     if (areaMatch) {
@@ -2091,7 +2092,7 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
   }
 
   function buildFastQSAssessment() {
-    const descLower = descText.toLowerCase();
+    const descLower = originalDescText.toLowerCase();
     const unitLower = unitText.toLowerCase().trim();
     const detected = detectQuantityFromDescription();
 
@@ -2146,7 +2147,7 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
     let explanation = 'Based on average UK subcontracting rates, this item is estimated at standard regional prices. Includes standard labour hours and minor consumables.';
     let source = 'Offline Heuristics Cost Index';
 
-    const descLower = descText.toLowerCase();
+    const descLower = originalDescText.toLowerCase();
     const unitLower = unitText.toLowerCase().trim();
     const isHourly = unitLower === 'hr' || unitLower === 'hour' || unitLower === 'hours';
     const isDaily = unitLower === 'day' || unitLower === 'days' || unitLower === 'daily';
@@ -2325,7 +2326,7 @@ app.post('/api/ai/price-suggest', requireAuth, async (req, res) => {
   }
 
   function rateSplitForSavedBook(amount) {
-    const descLower = descText.toLowerCase();
+    const descLower = originalDescText.toLowerCase();
     const unitLower = unitText.toLowerCase().trim();
 
     const labourLike =
