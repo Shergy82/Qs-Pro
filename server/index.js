@@ -3474,26 +3474,6 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
       req.file.originalname.toLowerCase().endsWith('.xls') ||
       req.file.originalname.toLowerCase().endsWith('.csv');
 
-    // Structured SOR/specification/BOQ workbooks must be parsed deterministically.
-    // Do this before the AI/strategy registry so Excel BOQs still import when Gemini
-    // is unavailable, rate limited, or not suited to this workbook layout.
-    if (isExcelUpload && (largeWorkbookHasStructuredFurtherInfoSheet(req.file.path) || largeWorkbookLooksLikeBoq(req.file.path))) {
-      console.log('[Document Analyzer] Structured Excel workbook detected. Using deterministic SOR/BOQ parser.');
-      const extractedItems = parseLargeExcelWorkbook(req.file.path, req.file.originalname)
-        .map((item, index) => ({
-          ...item,
-          sourceOrder: Number.isFinite(Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex)) ? Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex) : index,
-          sortOrder: Number.isFinite(Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex)) ? Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex) : index,
-          originalIndex: Number.isFinite(Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder)) ? Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder) : index,
-          status: 'Yes',
-          selected: true
-        }))
-        .sort((a, b) => Number(a.sourceOrder) - Number(b.sourceOrder));
-
-      try { fs.unlinkSync(req.file.path); } catch (e) {}
-      return res.json({ success: true, filename: req.file.originalname, items: extractedItems });
-    }
-
     if (!isExcelUpload && !ai) {
       return res.status(500).json({ error: 'Gemini API key is not configured.' });
     }
@@ -3529,6 +3509,34 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
       const items = await selectedStrategy.parse(req.file.path, req.file.mimetype, req.file.originalname);
       try { fs.unlinkSync(req.file.path); } catch (e) {}
       return res.json({ success: true, filename: req.file.originalname, items });
+    }
+
+    // If it's an Excel upload and didn't match a strategy, try our local Excel workbook parser first.
+    // If it extracts 5 or more items, we use it directly to guarantee complete, deterministic parsing.
+    if (isExcelUpload) {
+      try {
+        console.log('[Document Analyzer] Running deterministic large Excel workbook parser fallback...');
+        const extractedItems = parseLargeExcelWorkbook(req.file.path, req.file.originalname)
+          .map((item, index) => ({
+            ...item,
+            sourceOrder: Number.isFinite(Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex)) ? Number(item.sourceOrder ?? item.sortOrder ?? item.originalIndex) : index,
+            sortOrder: Number.isFinite(Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex)) ? Number(item.sortOrder ?? item.sourceOrder ?? item.originalIndex) : index,
+            originalIndex: Number.isFinite(Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder)) ? Number(item.originalIndex ?? item.sourceOrder ?? item.sortOrder) : index,
+            status: 'Yes',
+            selected: true
+          }))
+          .sort((a, b) => Number(a.sourceOrder) - Number(b.sourceOrder));
+
+        if (extractedItems.length >= 5) {
+          console.log(`[Document Analyzer] Deterministic parser successfully extracted ${extractedItems.length} items. Skipping AI fallback.`);
+          try { fs.unlinkSync(req.file.path); } catch (e) {}
+          return res.json({ success: true, filename: req.file.originalname, items: extractedItems });
+        } else {
+          console.log(`[Document Analyzer] Deterministic parser only found ${extractedItems.length} items. Proceeding to AI/Local parsing.`);
+        }
+      } catch (err) {
+        console.warn('[Document Analyzer] Deterministic parser failed or was skipped:', err.message);
+      }
     }
 
     const isExcel = req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
