@@ -2849,12 +2849,12 @@ function largeFindChecklistColumns(rows) {
     if (!Array.isArray(row)) continue;
     if (row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '').length <= 1) continue;
 
-    const headers = row.map(largeNormaliseHeader);
+    const headers = Array.from(row).map(largeNormaliseHeader);
     const roomIdx = headers.findIndex(h => h === 'room' || h === 'area' || h === 'location');
     const typeIdx = headers.findIndex(h => h === 'type' || h === 'trade' || h === 'item');
-    const requiredIdx = headers.findIndex(h => h.includes('required') || h === 'yes or no' || h === 'required yes or no');
-    const furtherInfoIdx = headers.findIndex(h => h.includes('further information'));
-    const detailIdx = headers.findIndex(h => h === 'details' || h === 'scope' || h.includes('description'));
+    const requiredIdx = headers.findIndex(h => h && (h.includes('required') || h === 'yes or no' || h === 'required yes or no'));
+    const furtherInfoIdx = headers.findIndex(h => h && h.includes('further information'));
+    const detailIdx = headers.findIndex(h => h === 'details' || h === 'scope' || (h && h.includes('description')));
     const furtherIdx = furtherInfoIdx !== -1 ? furtherInfoIdx : (requiredIdx !== -1 ? detailIdx : -1);
 
     // Do not classify a normal BOQ/SOR table as a checklist just because it has
@@ -3404,12 +3404,12 @@ function largeWorkbookLooksLikeBoq(filePath) {
         const row = rows[r];
         if (!Array.isArray(row)) continue;
 
-        const headers = row.map(largeNormaliseHeader);
+        const headers = Array.from(row).map(largeNormaliseHeader);
         const possibleItemIdx = headers.findIndex(h => h === 'item' || h === 'ref' || h === 'code');
-        const possibleDescIdx = headers.findIndex(h => h.includes('description') || h.includes('work') || h === 'details');
+        const possibleDescIdx = headers.findIndex(h => h && (h.includes('description') || h.includes('work') || h === 'details'));
         const possibleUnitIdx = headers.findIndex(h => h === 'unit' || h === 'uom');
-        const possibleQtyIdx = headers.findIndex(h => h === 'qty' || h.includes('quantity'));
-        const possibleRateIdx = headers.findIndex(h => h === 'rate' || h.includes('unit cost'));
+        const possibleQtyIdx = headers.findIndex(h => h === 'qty' || (h && h.includes('quantity')));
+        const possibleRateIdx = headers.findIndex(h => h === 'rate' || (h && h.includes('unit cost')));
         const possibleAmountIdx = headers.findIndex(h => h === 'amount' || h === 'total');
 
         if (possibleDescIdx !== -1 && (possibleItemIdx !== -1 || possibleUnitIdx !== -1 || possibleQtyIdx !== -1 || possibleRateIdx !== -1 || possibleAmountIdx !== -1)) {
