@@ -1461,6 +1461,11 @@
                         <p class="text-xs text-secondary" style="margin: 0;">Select which rooms or sections from the scope you wish to price. Deselect any areas you do not need.</p>
                     </div>
                     
+                    <!-- Sheet Tabs Selection -->
+                    <div id="import-sheets-tabs-container" style="display: none; gap: 8px; overflow-x: auto; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; margin-bottom: 4px;">
+                        <!-- Filled dynamically -->
+                    </div>
+                    
                     <div style="display: flex; gap: 8px; margin-bottom: 6px; flex-shrink: 0;">
                         <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.selectAllImportRooms(true)">Select All</button>
                         <button class="btn btn-secondary text-xs" style="padding: 6px 12px;" onclick="app.selectAllImportRooms(false)">Deselect All</button>
@@ -1554,7 +1559,7 @@
     </div>
 
     <!-- JavaScript Files -->
-    <script src="app.js?v=import-order-3"></script>
+    <script src="app.js?v=sheet-tabs-1"></script>
     <script src="components/takeoff.js"></script>
     <script src="components/pricing.js?v=subcontract-1"></script>
     <script src="components/library.js"></script>

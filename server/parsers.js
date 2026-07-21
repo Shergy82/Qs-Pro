@@ -183,8 +183,6 @@ registerParser('gentleshaw_excel', {
         }
       }
 
-      const roomResult = extractRoomFromDescription(description, currentSection);
-
       items.push({
         section: roomResult.room,
         category: '',
@@ -196,7 +194,8 @@ registerParser('gentleshaw_excel', {
         plantRate: 0,
         subRate: 0,
         status: 'Yes',
-        selected: true
+        selected: true,
+        sourceSheet: 'Scope of Works'
       });
     }
 
@@ -396,8 +395,6 @@ registerParser('hanley_park_excel', {
 
       const unit = unitCell ? String(unitCell).trim() : 'Item';
 
-      const roomResult = extractRoomFromDescription(description, currentSection);
-
       items.push({
         section: roomResult.room,
         category: '',
@@ -409,7 +406,8 @@ registerParser('hanley_park_excel', {
         plantRate: 0,
         subRate: 0,
         status: 'Yes',
-        selected: true
+        selected: true,
+        sourceSheet: targetSheetName
       });
     }
 

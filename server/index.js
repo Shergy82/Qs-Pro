@@ -212,7 +212,8 @@ function localHeuristicExcelParser(filePath) {
             sortOrder: items.length,
             originalIndex: items.length,
             status: 'Yes',
-            selected: true
+            selected: true,
+            sourceSheet: sheetName
           });
         }
         return; // Proceed to next sheet
@@ -230,6 +231,7 @@ function localHeuristicExcelParser(filePath) {
       for (let r = 0; r < Math.min(rows.length, 15); r++) {
         const row = rows[r];
         if (!row || !Array.isArray(row)) continue;
+        if (row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '').length <= 1) continue;
 
         let foundDesc = false;
         row.forEach((cell, idx) => {
@@ -377,7 +379,13 @@ function localHeuristicExcelParser(filePath) {
           labourRate,
           materialRate,
           plantRate,
-          subRate
+          subRate,
+          sourceOrder: items.length,
+          sortOrder: items.length,
+          originalIndex: items.length,
+          status: 'Yes',
+          selected: true,
+          sourceSheet: sheetName
         });
       }
     });
@@ -2839,6 +2847,7 @@ function largeFindChecklistColumns(rows) {
   for (let r = 0; r < Math.min(rows.length, 80); r++) {
     const row = rows[r];
     if (!Array.isArray(row)) continue;
+    if (row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '').length <= 1) continue;
 
     const headers = row.map(largeNormaliseHeader);
     const roomIdx = headers.findIndex(h => h === 'room' || h === 'area' || h === 'location');
@@ -2972,8 +2981,7 @@ function largeSkipSheet(sheetName) {
     lower.includes('general specification') ||
     lower === 'specification' ||
     lower.includes('compliance') ||
-    lower.includes('cost breakdown') ||
-    lower === 'sheet1'
+    lower.includes('cost breakdown')
   );
 }
 
@@ -3120,6 +3128,7 @@ function parseLargeExcelWorkbook(filePath, originalName) {
     for (let r = 0; r < Math.min(rows.length, 40); r++) {
       const row = rows[r];
       if (!Array.isArray(row)) continue;
+      if (row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '').length <= 1) continue;
 
       for (let c = 0; c < Math.min(row.length, 40); c++) {
         const str = largeCellText(row[c]).toLowerCase();
@@ -3144,8 +3153,11 @@ function parseLargeExcelWorkbook(filePath, originalName) {
     if (descIdx === -1) {
       for (let c = 0; c < 12; c++) {
         let score = 0;
-        for (let r = 0; r < Math.min(rows.length, 80); r++) {
-          const value = largeCellText(rows[r]?.[c]);
+        for (let r = 0; r < Math.min(rows.length, 250); r++) {
+          const row = rows[r];
+          if (!row || !Array.isArray(row)) continue;
+          if (row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '').length <= 1) continue;
+          const value = largeCellText(row[c]);
           if (value.length > 20) score++;
         }
         if (score >= 3) {
@@ -3604,6 +3616,7 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
           for (let r = 0; r < Math.min(rows.length, 15); r++) {
             const row = rows[r];
             if (!row || !Array.isArray(row)) continue;
+            if (row.filter(cell => cell !== null && cell !== undefined && String(cell).trim() !== '').length <= 1) continue;
             let foundDesc = false;
             row.forEach((cell, idx) => {
               if (!cell) return;
@@ -3710,6 +3723,7 @@ app.post('/api/analyze-document', requireAuth, upload.single('file'), async (req
                 subRate: item.subRate || 0,
                 sourceOrder: item.sourceOrder,
                 sortOrder: item.sortOrder,
+                sourceSheet: item.sourceSheet || '',
                 status: 'Yes',
                 selected: true
               });
@@ -3749,13 +3763,27 @@ ${excelText}`
             }
           }, 2, 1000);
           const geminiItems = JSON.parse(response.text);
-          const sourceLinesForOrder = excelText.split(/\r?\n/).map((line, index) => ({ index, text: String(line || '').toLowerCase() }));
+          
+          const sourceLinesForOrder = [];
+          let currentSheetNameInText = 'General';
+          excelText.split(/\r?\n/).forEach((line, index) => {
+            const lineStr = String(line || '').trim();
+            if (lineStr.startsWith('### Sheet:')) {
+              currentSheetNameInText = lineStr.replace('### Sheet:', '').trim();
+            }
+            sourceLinesForOrder.push({
+              index,
+              text: lineStr.toLowerCase(),
+              sheet: currentSheetNameInText
+            });
+          });
 
-          function findSpreadsheetSourceOrder(item, fallbackIndex) {
+          function findSpreadsheetSource(item, fallbackIndex) {
             const text = (String(item.section || '') + ' ' + String(item.description || '')).toLowerCase();
             const tokens = text.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(token => token.length >= 4 && !['item','work','works','description','allowance','general'].includes(token));
             let bestIndex = Number.MAX_SAFE_INTEGER;
             let bestScore = 0;
+            let bestSheet = '';
 
             for (const line of sourceLinesForOrder) {
               let score = 0;
@@ -3765,13 +3793,18 @@ ${excelText}`
               if (score > bestScore || (score === bestScore && score > 0 && line.index < bestIndex)) {
                 bestScore = score;
                 bestIndex = line.index;
+                bestSheet = line.sheet;
               }
             }
 
-            return bestScore > 0 ? bestIndex : 100000 + fallbackIndex;
+            return {
+              sourceOrder: bestScore > 0 ? bestIndex : 100000 + fallbackIndex,
+              sourceSheet: bestScore > 0 ? bestSheet : ''
+            };
           }
 
-          geminiItems.map((item, index) => ({ ...item, sourceOrder: findSpreadsheetSourceOrder(item, index) })).sort((a, b) => Number(a.sourceOrder || 0) - Number(b.sourceOrder || 0)).forEach(item => {
+          geminiItems.forEach((item, index) => {
+            const sourceInfo = findSpreadsheetSource(item, index);
             const roomResult = extractRoomFromDescription(item.description || '', item.section || 'General');
             extractedItems.push({
               section: roomResult.room,
@@ -3779,8 +3812,9 @@ ${excelText}`
               description: roomResult.description,
               quantity: item.quantity || 1,
               unit: item.unit || 'Item',
-              sourceOrder: item.sourceOrder,
-              sortOrder: item.sourceOrder,
+              sourceOrder: sourceInfo.sourceOrder,
+              sortOrder: sourceInfo.sourceOrder,
+              sourceSheet: sourceInfo.sourceSheet,
               status: 'Yes',
               selected: true
             });
@@ -3802,6 +3836,7 @@ ${excelText}`
                 unit: item.unit || 'Item',
               sourceOrder: item.sourceOrder,
               sortOrder: item.sourceOrder,
+              sourceSheet: item.sourceSheet || '',
               status: 'Yes',
                 selected: true
               });

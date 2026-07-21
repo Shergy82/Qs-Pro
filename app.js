@@ -1,4 +1,4 @@
-﻿/**
+/**
  * QS Pro AI - Main Coordinator & State Manager
  * Safer full rewrite
  */
@@ -1118,6 +1118,7 @@ if (looksLikeHtml) {
 
         this.state.importPreview.allRooms = allRooms;
         this.state.importPreview.selectedRooms = new Set(allRooms);
+        this.state.importPreview.selectedSheet = 'All Sheets';
 
         if (!this.state.importPreview.roomDimensions) {
             this.state.importPreview.roomDimensions = {};
@@ -1169,6 +1170,7 @@ if (looksLikeHtml) {
 
         // Populate step data
         if (step === 1) {
+            this.renderImportSheetsTabs();
             this.renderImportRoomsGrid();
         } else if (step === 2) {
             this.renderImportRoomsDimensionsGrid();
@@ -1183,11 +1185,23 @@ if (looksLikeHtml) {
 
     selectAllImportRooms(checked) {
         if (!this.state.importPreview || !this.state.importPreview.allRooms) return;
-        if (checked) {
-            this.state.importPreview.selectedRooms = new Set(this.state.importPreview.allRooms);
-        } else {
-            this.state.importPreview.selectedRooms = new Set();
-        }
+        const selectedSheet = this.state.importPreview.selectedSheet || 'All Sheets';
+
+        const displayedRooms = this.state.importPreview.allRooms.filter(room => {
+            return this.state.importPreview.items.some(item => 
+                (item.section || 'General').toLowerCase().trim() === room.toLowerCase().trim() &&
+                (selectedSheet === 'All Sheets' || item.sourceSheet === selectedSheet)
+            );
+        });
+
+        displayedRooms.forEach(room => {
+            if (checked) {
+                this.state.importPreview.selectedRooms.add(room);
+            } else {
+                this.state.importPreview.selectedRooms.delete(room);
+            }
+        });
+
         this.renderImportRoomsGrid();
     }
 
@@ -1205,15 +1219,75 @@ if (looksLikeHtml) {
         }
     }
 
+    renderImportSheetsTabs() {
+        const container = document.getElementById('import-sheets-tabs-container');
+        if (!container || !this.state.importPreview) return;
+
+        container.innerHTML = '';
+
+        const items = this.state.importPreview.items || [];
+        const sheets = [...new Set(items.map(item => item.sourceSheet).filter(s => s && s.trim() !== ''))];
+
+        if (sheets.length <= 1) {
+            container.style.display = 'none';
+            this.state.importPreview.selectedSheet = 'All Sheets';
+            return;
+        }
+
+        container.style.display = 'flex';
+
+        const allSheetsList = ['All Sheets', ...sheets];
+
+        if (!this.state.importPreview.selectedSheet || !allSheetsList.includes(this.state.importPreview.selectedSheet)) {
+            this.state.importPreview.selectedSheet = 'All Sheets';
+        }
+
+        allSheetsList.forEach(sheetName => {
+            const btn = document.createElement('button');
+            const isActive = this.state.importPreview.selectedSheet === sheetName;
+
+            btn.className = 'tab-btn';
+            btn.style.padding = '6px 12px';
+            btn.style.fontSize = '12px';
+            btn.style.fontWeight = '600';
+            btn.style.borderRadius = '20px';
+            btn.style.border = isActive ? '1px solid var(--color-indigo)' : '1px solid var(--border-color)';
+            btn.style.background = isActive ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.02)';
+            btn.style.color = isActive ? '#818cf8' : 'var(--text-secondary)';
+            btn.style.cursor = 'pointer';
+            btn.style.transition = 'all 0.2s';
+            btn.style.whiteSpace = 'nowrap';
+            btn.textContent = sheetName;
+
+            btn.onclick = () => {
+                this.state.importPreview.selectedSheet = sheetName;
+                this.renderImportSheetsTabs();
+                this.renderImportRoomsGrid();
+            };
+
+            container.appendChild(btn);
+        });
+    }
+
     renderImportRoomsGrid() {
         const container = document.getElementById('import-rooms-selection-grid');
         if (!container || !this.state.importPreview) return;
 
         container.innerHTML = '';
         const allRooms = this.state.importPreview.allRooms || [];
+        const selectedSheet = this.state.importPreview.selectedSheet || 'All Sheets';
 
         allRooms.forEach(room => {
-            const count = this.state.importPreview.items.filter(item => (item.section || 'General').toLowerCase().trim() === room.toLowerCase().trim()).length;
+            // Filter items in this room that belong to the selected sheet
+            const roomItems = this.state.importPreview.items.filter(item => 
+                (item.section || 'General').toLowerCase().trim() === room.toLowerCase().trim() &&
+                (selectedSheet === 'All Sheets' || item.sourceSheet === selectedSheet)
+            );
+
+            // Skip rendering room cards if there are no items for it on this sheet
+            if (roomItems.length === 0) return;
+
+            const count = roomItems.length;
             const isChecked = this.state.importPreview.selectedRooms.has(room);
 
             const card = document.createElement('label');
