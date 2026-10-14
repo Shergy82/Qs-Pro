@@ -1,10 +1,10 @@
-const CACHE_NAME = 'qs-pro-ai-pwa-v22';
+const CACHE_NAME = 'qs-pro-ai-pwa-v23';
 
 const APP_SHELL = [
   '/',
   '/index.html',
   '/styles.css?v=mobile-12',
-  '/app.js?v=import-order-3',
+  '/app.js?v=login-1',
   '/components/takeoff.js',
   '/components/pricing.js?v=subcontract-1',
   '/components/library.js',

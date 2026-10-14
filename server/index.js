@@ -680,6 +680,9 @@ async function requireAuth(req, res, next) {
 
 // 1. Register User
 app.post('/api/auth/register', async (req, res) => {
+  if (process.env.ALLOW_REGISTRATION === 'false') {
+    return res.status(403).json({ error: 'Registration is closed. Ask the administrator for an account.' });
+  }
   const { email, password, companyName, estimatorName, officeAddress, vatNumber } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
