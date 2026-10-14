@@ -1,0 +1,9 @@
+.git
+.gitignore
+node_modules
+server/node_modules
+server/.env
+.env*
+server/firebase-key.json
+*.json.key
+public

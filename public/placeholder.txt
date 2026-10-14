@@ -1,0 +1,1 @@
+static placeholder; app is served by Cloud Run via rewrite

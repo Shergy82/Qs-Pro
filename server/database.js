@@ -688,6 +688,10 @@ async function seedUserScope(_db, userId) {
 }
 
 async function initDb() {
+  // The demo account uses a publicly known password, so only seed it when explicitly enabled.
+  if (process.env.SEED_DEMO_USER !== 'true') {
+    return;
+  }
   const existingDemo = await queryOne('users', 'email', '==', 'demo@truecostqs.com');
   if (existingDemo) {
     return;

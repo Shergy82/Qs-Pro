@@ -105,60 +105,120 @@ if (looksLikeHtml) {
     }
 
     async autoLogin() {
-        console.log('QS Pro AI - attempting automatic login...');
-
-        try {
-            const loginData = await this.apiFetch('/api/auth/login', {
-                method: 'POST',
-                body: {
-                    email: 'demo@truecostqs.com',
-                    password: 'password123'
-                }
-            });
-
-            this.state.token = loginData.token;
-            this.state.user = loginData.user;
-            localStorage.setItem('qs_pro_auth_token', loginData.token);
-            localStorage.setItem('qs_pro_auth_user', JSON.stringify(loginData.user));
-
-            console.log('Login successful:', this.state.user?.email);
-        } catch (loginErr) {
-            console.warn('Login failed. Trying demo registration...', loginErr.message);
-
+        // Reuse a saved session if it is still valid
+        const savedToken = localStorage.getItem('qs_pro_auth_token');
+        if (savedToken) {
+            this.state.token = savedToken;
             try {
-                const registerData = await this.apiFetch('/api/auth/register', {
-                    method: 'POST',
-                    body: {
-                        email: 'demo@truecostqs.com',
-                        password: 'password123',
-                        companyName: 'Apex Builders Ltd',
-                        estimatorName: 'Phil Estimator'
-                    }
-                });
-
-                this.state.token = registerData.token;
-                this.state.user = registerData.user;
-                localStorage.setItem('qs_pro_auth_token', registerData.token);
-                localStorage.setItem('qs_pro_auth_user', JSON.stringify(registerData.user));
-
-                console.log('Registration/login successful:', this.state.user?.email);
-            } catch (regErr) {
-                console.error('Auto-login and registration failed:', regErr);
-
-                alert(
-                    `Connection to backend failed. Backend URL: ${window.location.origin}`
-                );
-
-                return false;
+                const me = await this.apiFetch('/api/auth/me');
+                this.state.user = me.user;
+            } catch (err) {
+                this.state.token = null;
+                this.state.user = null;
+                localStorage.removeItem('qs_pro_auth_token');
+                localStorage.removeItem('qs_pro_auth_user');
             }
+        }
+
+        if (!this.state.user) {
+            await this.showLoginScreen();
         }
 
         if (this.state.user) {
             this.state.targetMargin = Number(this.state.user.margin) || 10.0;
             this.state.targetContingency = Number(this.state.user.contingency) || 3.0;
+            this.applyUserToSidebar();
         }
 
-        return true;
+        return !!this.state.user;
+    }
+
+    applyUserToSidebar() {
+        const u = this.state.user;
+        if (!u) return;
+        const name = u.estimatorName || u.email;
+        const nameEl = document.querySelector('.sidebar-footer .user-name');
+        const roleEl = document.querySelector('.sidebar-footer .user-role');
+        const avatarEl = document.querySelector('.sidebar-footer .user-avatar');
+        if (nameEl) nameEl.textContent = name;
+        if (roleEl) roleEl.textContent = u.companyName || '';
+        if (avatarEl) avatarEl.textContent = String(name).split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+        const profile = document.querySelector('.sidebar-footer .user-profile');
+        if (profile && !document.getElementById('logoutBtn')) {
+            const btn = document.createElement('button');
+            btn.id = 'logoutBtn';
+            btn.textContent = 'Sign out';
+            btn.style.cssText = 'margin-left:auto;background:none;border:1px solid rgba(255,255,255,.2);color:inherit;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer';
+            btn.addEventListener('click', () => this.logout());
+            profile.appendChild(btn);
+        }
+    }
+
+    async logout() {
+        try { await this.apiFetch('/api/auth/logout', { method: 'POST' }); } catch (e) { }
+        localStorage.removeItem('qs_pro_auth_token');
+        localStorage.removeItem('qs_pro_auth_user');
+        window.location.reload();
+    }
+
+    showLoginScreen() {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0b0f1a;font-family:inherit;color:#e8ecf4;padding:16px';
+            overlay.innerHTML = `
+                <form id="qsAuthForm" style="width:100%;max-width:380px;background:#141a2b;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:28px;display:flex;flex-direction:column;gap:12px">
+                    <h2 id="qsAuthTitle" style="margin:0 0 4px;font-size:22px">Sign in to QS Pro AI</h2>
+                    <div id="qsRegFields" style="display:none;flex-direction:column;gap:12px">
+                        <input name="companyName" placeholder="Company name" autocomplete="organization">
+                        <input name="estimatorName" placeholder="Your name" autocomplete="name">
+                    </div>
+                    <input name="email" type="email" placeholder="Email" required autocomplete="username">
+                    <input name="password" type="password" placeholder="Password" required autocomplete="current-password">
+                    <div id="qsAuthError" style="color:#ff7a7a;font-size:13px;min-height:16px"></div>
+                    <button type="submit" id="qsAuthSubmit" style="padding:11px;border:0;border-radius:8px;background:#5b6cf0;color:#fff;font-size:15px;cursor:pointer">Sign in</button>
+                    <button type="button" id="qsAuthToggle" style="background:none;border:0;color:#8fa0ff;cursor:pointer;font-size:13px">Create an account</button>
+                </form>`;
+            overlay.querySelectorAll('input').forEach(i => {
+                i.style.cssText = 'padding:11px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#0b0f1a;color:#e8ecf4;font-size:15px';
+            });
+            document.body.appendChild(overlay);
+
+            let registering = false;
+            const form = overlay.querySelector('#qsAuthForm');
+            const errEl = overlay.querySelector('#qsAuthError');
+            const setMode = (reg) => {
+                registering = reg;
+                overlay.querySelector('#qsAuthTitle').textContent = reg ? 'Create your account' : 'Sign in to QS Pro AI';
+                overlay.querySelector('#qsRegFields').style.display = reg ? 'flex' : 'none';
+                overlay.querySelector('#qsAuthSubmit').textContent = reg ? 'Create account' : 'Sign in';
+                overlay.querySelector('#qsAuthToggle').textContent = reg ? 'I already have an account' : 'Create an account';
+                form.password.autocomplete = reg ? 'new-password' : 'current-password';
+                errEl.textContent = '';
+            };
+            overlay.querySelector('#qsAuthToggle').addEventListener('click', () => setMode(!registering));
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                errEl.textContent = '';
+                const body = { email: form.email.value.trim(), password: form.password.value };
+                if (registering) {
+                    body.companyName = form.companyName.value.trim();
+                    body.estimatorName = form.estimatorName.value.trim();
+                }
+                try {
+                    const data = await this.apiFetch(registering ? '/api/auth/register' : '/api/auth/login', { method: 'POST', body });
+                    this.state.token = data.token;
+                    this.state.user = data.user;
+                    localStorage.setItem('qs_pro_auth_token', data.token);
+                    localStorage.setItem('qs_pro_auth_user', JSON.stringify(data.user));
+                    overlay.remove();
+                    resolve(true);
+                } catch (err) {
+                    errEl.textContent = err.message === 'Failed to fetch' ? 'Cannot reach the server. Try again.' : err.message;
+                }
+            });
+        });
     }
 
     async loadInitialData() {
